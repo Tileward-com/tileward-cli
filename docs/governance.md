@@ -46,7 +46,7 @@ vocabulary still lands on the lock. Two consequences follow, and both are real:
 
 Obfuscated input — homoglyphs, encodings, other languages — is a separate attack surface and is not
 fully closed. The measured red-team results, including the failure rates for each of these shapes,
-are in [tileward.com/llms.txt](https://tileward.com/llms.txt); this page does not restate them.
+are on [tileward.com/governance](https://tileward.com/governance/); this page does not restate them.
 
 Design around it rather than against it: an allowlist plus a narrow set of permitted topics leaves
 much less room for a phrasing you did not anticipate than a blocklist does.

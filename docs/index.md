@@ -59,8 +59,7 @@ points everything at one host will not work. See [Hosts](hosts.md).
 
 ## Elsewhere
 
-- [tileward.com](https://tileward.com) — the product.
-- [tileward.com/llms.txt](https://tileward.com/llms.txt) — what we ship and how each number was
-  measured. It is the canonical statement; these pages do not restate its figures.
+- [tileward.com](https://tileward.com) — the product, and where every measured figure is
+  published. These pages do not restate them.
 - [app.tileward.com/account](https://app.tileward.com/account) — dashboard, keys, billing.
 - [Issues](https://github.com/Tileward-com/tileward-cli/issues) — bugs and requests.

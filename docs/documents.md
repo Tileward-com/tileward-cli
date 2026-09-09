@@ -76,5 +76,5 @@ fully removed by `docs rm` alone if a conversation has already recalled against 
 ## Privacy
 
 Files stay private to the account: never pooled with another tenant's, never used for training.
-The full statement, including deployment modes where content never reaches Tileward at all, is at
-[tileward.com/llms.txt](https://tileward.com/llms.txt).
+The full statement, including deployment modes where content never reaches Tileward at all, is on
+[tileward.com/documents](https://tileward.com/documents/).

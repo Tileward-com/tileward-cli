@@ -139,6 +139,6 @@ tw.context.remember(answer, role="assistant")
 Prepend it as context rather than merging it into the user's words, so the model can tell what the
 person asked from what the store supplied. `twcli chat --remember` does exactly this.
 
-What Context saves on real threads, and how it was measured, is in
-[tileward.com/llms.txt](https://tileward.com/llms.txt). Your own account's figures are in
+What Context saves on real threads, and how it was measured, is on
+[tileward.com/context](https://tileward.com/context/). Your own account's figures are in
 `twcli account savings`.

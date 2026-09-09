@@ -105,5 +105,5 @@ twcli models show tileward-35b-a3b
 ```
 
 Everything the API reports about one model: precision, served context window, rate, compression
-ratio, and whatever fields the catalogue grows later. How each published figure was measured is in
-[tileward.com/llms.txt](https://tileward.com/llms.txt).
+ratio, and whatever fields the catalogue grows later. How each published figure was measured is on
+[tileward.com/models](https://tileward.com/models/).
