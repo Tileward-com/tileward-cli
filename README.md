@@ -19,7 +19,7 @@
 
 <p align="center">
   <a href="https://tileward.com">Product</a> ·
-  <a href="https://tileward.com/docs">Docs</a> ·
+  <a href="https://tileward-com.github.io/tileward-cli/">Docs</a> ·
   <a href="https://app.tileward.com/account">Dashboard</a> ·
   <a href="https://github.com/Tileward-com/tileward-cli/releases">Releases</a>
 </p>
@@ -54,6 +54,9 @@ from tileward import Tileward
 tw = Tileward()                                   # reads TILEWARD_API_KEY
 print(tw.chat.say("Say hello in one sentence."))
 ```
+
+**Full documentation: [https://tileward-com.github.io/tileward-cli/](https://tileward-com.github.io/tileward-cli/)** — every command, the library reference, configuration,
+errors, and using Tileward from an OpenAI-compatible client. What follows is the short version.
 
 ---
 
@@ -279,10 +282,12 @@ That helper exists so nobody has to guess whether `/v1` belongs on the end.
 
 ## Links
 
+- **Documentation** — [https://tileward-com.github.io/tileward-cli/](https://tileward-com.github.io/tileward-cli/)
 - **Product** — [tileward.com](https://tileward.com)
 - **Dashboard and keys** — [app.tileward.com/account](https://app.tileward.com/account)
 - **What we ship and how each number was measured** — [tileward.com/llms.txt](https://tileward.com/llms.txt)
-- **How `auth login` works** — [docs/device-auth.md](https://github.com/Tileward-com/tileward-cli/blob/main/docs/device-auth.md)
+- **Connect a chat client, editor or framework** — [tileward.com/docs](https://tileward.com/docs/)
+- **How `auth login` works** — [https://tileward-com.github.io/tileward-cli/device-auth/](https://tileward-com.github.io/tileward-cli/device-auth/)
 - **Issues** — [github.com/Tileward-com/tileward-cli/issues](https://github.com/Tileward-com/tileward-cli/issues)
 
 ## License

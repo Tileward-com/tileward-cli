@@ -3,6 +3,8 @@
 Short version: the CLI shows you a code, you approve it in a browser, and the CLI ends up holding
 a console session. No password is ever typed into a terminal.
 
+This page is the protocol. For what to run, see [Keys and sessions](credentials.md).
+
 ## Why a login at all, when you have an API key
 
 Two different credentials, and they are not interchangeable.
@@ -11,6 +13,9 @@ Two different credentials, and they are not interchangeable.
 | --- | --- | --- |
 | **API key** (`tw_live_…`) | the model, the guard, Context, Documents | minted from a session |
 | **Console session** | the account: keys, billing, policies, audit | `twcli auth login` |
+
+The whole exchange is with the console host, `app.tileward.com`, which is where `/auth/*` and
+`/api/*` live. `api.tileward.com` serves `/v1` only. See [Hosts](hosts.md).
 
 Key management authenticates on a signed session, not on a bearer key. That is deliberate: a key
 that could mint keys would survive its own revocation — revoke it, and whoever had it just mints
@@ -39,7 +44,7 @@ holding is a session that can be cut off at any time by signing out.
 ## The exchange
 
 ```
-   twcli                                     api.tileward.com            you, in a browser
+   twcli                                     app.tileward.com            you, in a browser
      |                                              |                            |
      |  POST /auth/device/code                      |                            |
      |--------------------------------------------->|                            |
