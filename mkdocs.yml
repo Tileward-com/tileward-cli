@@ -1,0 +1,66 @@
+site_name: tileward
+site_description: The Tileward client library and twcli command line.
+site_url: https://tileward-com.github.io/tileward-cli/
+repo_url: https://github.com/Tileward-com/tileward-cli
+repo_name: Tileward-com/tileward-cli
+edit_uri: edit/main/docs/
+copyright: MIT licensed. Tileward.
+
+# Pages are plain Markdown on purpose: no page uses syntax that only renders after a build, so
+# docs/ stays readable on GitHub and this site can be dropped without stranding the content.
+docs_dir: docs
+
+theme:
+  name: material
+  logo: https://tileward.com/logo.png
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Dark
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Light
+
+extra_css:
+  - stylesheets/brand.css
+
+markdown_extensions:
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Start here:
+      - Overview: index.md
+      - quickstart.md
+      - credentials.md
+  - Capabilities:
+      - models.md
+      - governance.md
+      - context.md
+      - documents.md
+      - account.md
+  - Library:
+      - async.md
+      - errors.md
+      - openai.md
+  - Reference:
+      - cli.md
+      - configuration.md
+      - hosts.md
+      - The device flow: device-auth.md

@@ -1,0 +1,22 @@
+/* The four capability colours, from the landing CSS. */
+:root {
+  --tw-models: #1F5FA8;
+  --tw-context: #0C6E58;
+  --tw-governance: #8A5A0F;
+  --tw-documents: #9A3D8F;
+
+  --md-primary-fg-color: var(--tw-models);
+  --md-primary-fg-color--light: #3d7cc4;
+  --md-primary-fg-color--dark: #164478;
+  --md-accent-fg-color: var(--tw-context);
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #3d7cc4;
+  --md-accent-fg-color: #2f9c80;
+}
+
+.md-header__button.md-logo img {
+  height: 1.4rem;
+  width: auto;
+}

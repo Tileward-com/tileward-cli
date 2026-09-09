@@ -44,11 +44,17 @@ dev = [
   "mypy>=1.8",
   "ruff>=0.5",
 ]
+# Pinned below 2 deliberately: MkDocs 2.0 rewrites the theming and plugin systems with no
+# migration path, so an unpinned CI would break on its release rather than when we choose.
+docs = [
+  "mkdocs>=1.6,<2",
+  "mkdocs-material>=9.5,<10",
+]
 
 # Every one of these must resolve for the PUBLIC, since PyPI renders them to anonymous visitors.
 [project.urls]
 Homepage = "https://tileward.com"
-Documentation = "https://tileward.com/docs"
+Documentation = "https://tileward-com.github.io/tileward-cli/"
 Source = "https://github.com/Tileward-com/tileward-cli"
 Issues = "https://github.com/Tileward-com/tileward-cli/issues"
 Changelog = "https://github.com/Tileward-com/tileward-cli/releases"
