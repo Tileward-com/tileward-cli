@@ -82,6 +82,7 @@ class _ClientBase:
     def _transport_kwargs(self) -> Dict[str, Any]:
         return {
             "base_url": self.base_url,
+            "console_url": self.console_url,
             "api_key": self.api_key,
             "session_token": self.session_token,
             "timeout": self.timeout,

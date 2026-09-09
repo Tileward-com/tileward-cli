@@ -209,7 +209,7 @@ def test_the_size_cap_is_a_real_number():
 # ---- keys -------------------------------------------------------------------------------
 @respx.mock
 def test_keys_list_hides_revoked_by_default(client):
-    respx.get("https://api.test/api/account").mock(
+    respx.get("https://console.test/api/account").mock(
         return_value=httpx.Response(
             200,
             json={"keys": [{"id": 1, "revoked": False}, {"id": 2, "revoked": True}]},
@@ -221,7 +221,7 @@ def test_keys_list_hides_revoked_by_default(client):
 
 @respx.mock
 def test_key_management_uses_the_session_not_the_key(client):
-    route = respx.post("https://api.test/api/account/keys").mock(
+    route = respx.post("https://console.test/api/account/keys").mock(
         return_value=httpx.Response(200, json={"ok": True, "id": 7, "key": "tw_live_new"})
     )
     client.keys.create("laptop")

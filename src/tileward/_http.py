@@ -99,6 +99,7 @@ class _Base:
         self,
         *,
         base_url: str,
+        console_url: Optional[str] = None,
         api_key: Optional[str] = None,
         session_token: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
@@ -107,6 +108,11 @@ class _Base:
         default_headers: Optional[Mapping[str, str]] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
+        # TWO HOSTS, AND THEY DO NOT OVERLAP. `api.tileward.com` serves `/v1` only and answers
+        # anything else with 404 `wrong_host`. The session surface — `/auth/*` and every
+        # `/api/*` — lives on the console host. Routing by auth mode is what keeps that
+        # invisible to callers.
+        self.console_url = (console_url or base_url).rstrip("/")
         self.api_key = api_key
         self.session_token = session_token
         self.timeout = timeout
@@ -114,10 +120,15 @@ class _Base:
         self.default_headers = dict(default_headers or {})
         self.user_agent = _user_agent(user_agent_suffix)
 
-    def _url(self, path: str) -> str:
+    def _url(self, path: str, auth: AuthMode = "key", host: Optional[str] = None) -> str:
         if path.startswith("http://") or path.startswith("https://"):
             return path
-        return f"{self.base_url}/{path.lstrip('/')}"
+        # `session` always means the console. `none` is only used by the device-code flow, which
+        # is also console-only, so it routes there too — a caller wanting the api host with no
+        # credential passes host="api" explicitly.
+        which = host or ("console" if auth in ("session", "none") else "api")
+        root = self.console_url if which == "console" else self.base_url
+        return f"{root}/{path.lstrip('/')}"
 
     def _headers(self, auth: AuthMode, extra: Optional[Mapping[str, str]]) -> Dict[str, str]:
         headers: Dict[str, str] = {
@@ -181,8 +192,9 @@ class Transport(_Base):
         timeout: Optional[float] = None,
         retries: Optional[int] = None,
         raw: bool = False,
+        host: Optional[str] = None,
     ) -> Any:
-        url = self._url(path)
+        url = self._url(path, auth, host)
         hdrs = self._headers(auth, headers)
         budget = self.max_retries if retries is None else max(0, retries)
         attempt = 0
@@ -222,8 +234,9 @@ class Transport(_Base):
         headers: Optional[Mapping[str, str]] = None,
         auth: AuthMode = "key",
         timeout: Optional[float] = None,
+        host: Optional[str] = None,
     ) -> Iterator[Dict[str, Any]]:
-        url = self._url(path)
+        url = self._url(path, auth, host)
         hdrs = self._headers(auth, headers)
         hdrs["Accept"] = "text/event-stream"
         try:
@@ -271,10 +284,11 @@ class AsyncTransport(_Base):
         timeout: Optional[float] = None,
         retries: Optional[int] = None,
         raw: bool = False,
+        host: Optional[str] = None,
     ) -> Any:
         import asyncio
 
-        url = self._url(path)
+        url = self._url(path, auth, host)
         hdrs = self._headers(auth, headers)
         budget = self.max_retries if retries is None else max(0, retries)
         attempt = 0
@@ -314,8 +328,9 @@ class AsyncTransport(_Base):
         headers: Optional[Mapping[str, str]] = None,
         auth: AuthMode = "key",
         timeout: Optional[float] = None,
+        host: Optional[str] = None,
     ) -> AsyncIterator[Dict[str, Any]]:
-        url = self._url(path)
+        url = self._url(path, auth, host)
         hdrs = self._headers(auth, headers)
         hdrs["Accept"] = "text/event-stream"
         try:

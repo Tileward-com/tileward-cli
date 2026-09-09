@@ -27,10 +27,11 @@ def test_bearer_header_on_key_auth():
 @respx.mock
 def test_session_auth_sends_a_cookie_not_a_bearer():
     """The account surface reads `request.cookies`. A bearer header authenticates nothing there."""
-    route = respx.get("https://api.test/api/account").mock(
+    route = respx.get("https://console.test/api/account").mock(
         return_value=httpx.Response(200, json={"email": "a@b.c"})
     )
-    make(session_token="sess-123").request("GET", "/api/account", auth="session")
+    make(console_url="https://console.test", session_token="sess-123").request(
+        "GET", "/api/account", auth="session")
     request = route.calls[0].request
     assert request.headers["cookie"] == "tw_session=sess-123"
     assert "authorization" not in request.headers
@@ -96,10 +97,10 @@ def test_connection_failure_becomes_a_tileward_error(monkeypatch):
 @respx.mock
 def test_none_params_are_dropped():
     """An unset optional must not travel as the string 'None'."""
-    route = respx.get("https://api.test/api/account/audit").mock(
+    route = respx.get("https://console.test/api/account/audit").mock(
         return_value=httpx.Response(200, json={})
     )
-    make(session_token="s").request(
+    make(console_url="https://console.test", session_token="s").request(
         "GET", "/api/account/audit", params={"limit": None}, auth="session"
     )
     assert "limit" not in str(route.calls[0].request.url)
@@ -126,3 +127,45 @@ def test_stream_error_status_raises_before_yielding():
     )
     with pytest.raises(errors.InsufficientBalanceError):
         list(make().stream_sse("POST", "/v1/chat/completions", json={}))
+
+
+# ---- the two hosts -------------------------------------------------------------------------
+# Found the hard way on 2026-09-09: every session-authed call was going to api.tileward.com,
+# which serves /v1 ONLY and answers everything else with 404 `wrong_host`. `twcli auth login`,
+# `keys`, `account` and `context threads` were all broken against production and no test noticed,
+# because the fixtures pointed both hosts at the same place.
+
+
+@respx.mock
+def test_key_auth_goes_to_the_api_host():
+    route = respx.get("https://api.test/v1/models").mock(return_value=httpx.Response(200, json={}))
+    make(console_url="https://console.test").request("GET", "/v1/models")
+    assert route.called
+
+
+@respx.mock
+def test_session_auth_goes_to_the_console_host():
+    """api.tileward.com serves /v1 only; /api/* and /auth/* are console-only."""
+    route = respx.get("https://console.test/api/account").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    make(console_url="https://console.test", session_token="s").request(
+        "GET", "/api/account", auth="session")
+    assert route.called
+
+
+@respx.mock
+def test_the_device_flow_goes_to_the_console_host():
+    """It is auth='none' — it precedes a credential — but it is still console-only."""
+    route = respx.post("https://console.test/auth/device/code").mock(
+        return_value=httpx.Response(200, json={})
+    )
+    make(console_url="https://console.test").request(
+        "POST", "/auth/device/code", json={}, auth="none")
+    assert route.called
+
+
+def test_console_falls_back_to_base_when_not_configured():
+    """A single-host deployment (a dev server, a VPC install) sets one URL and both resolve."""
+    t = make(console_url=None)
+    assert t._url("/api/account", auth="session").startswith("https://api.test")

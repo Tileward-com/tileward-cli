@@ -13,6 +13,9 @@ def run(args, env=None):
     runner = CliRunner()
     base = {
         "TILEWARD_BASE_URL": "https://api.test",
+        # Distinct from the api host, because they are distinct in production: the session
+        # surface is console-only and the api host 404s it.
+        "TILEWARD_CONSOLE_URL": "https://console.test",
         "TILEWARD_CONTEXT_URL": "https://context.test",
         "TILEWARD_API_KEY": "tw_live_testkey",
     }
@@ -153,7 +156,7 @@ def test_keys_without_a_session_says_to_log_in(isolated_config):
 
 @respx.mock
 def test_keys_create_prints_the_secret_once(isolated_config):
-    respx.post("https://api.test/api/account/keys").mock(
+    respx.post("https://console.test/api/account/keys").mock(
         return_value=httpx.Response(200, json={"ok": True, "id": 3, "key": "tw_live_brandnew"})
     )
     result = run(["keys", "create", "--label", "ci"], env={"TILEWARD_SESSION": "sess"})
@@ -164,7 +167,7 @@ def test_keys_create_prints_the_secret_once(isolated_config):
 
 @respx.mock
 def test_keys_create_save_writes_the_key_to_the_profile(isolated_config):
-    respx.post("https://api.test/api/account/keys").mock(
+    respx.post("https://console.test/api/account/keys").mock(
         return_value=httpx.Response(200, json={"ok": True, "id": 3, "key": "tw_live_saved"})
     )
     run(["keys", "create", "--label", "ci", "--save"], env={"TILEWARD_SESSION": "sess"})

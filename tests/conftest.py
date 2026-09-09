@@ -32,6 +32,10 @@ def client():
         api_key="tw_live_testkey1234",
         session_token="session.token",
         base_url="https://api.test",
+        # A DIFFERENT host on purpose. api.tileward.com serves /v1 only and answers the session
+        # surface with 404 wrong_host, so a fixture that collapses the two cannot catch a call
+        # sent to the wrong one.
+        console_url="https://console.test",
         context_url="https://context.test",
         load_config=False,
     )

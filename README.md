@@ -248,7 +248,8 @@ Highest wins: an explicit argument, then the environment, then the profile, then
 | --- | --- |
 | `TILEWARD_API_KEY` | the key used for models, guard, Context and Documents |
 | `TILEWARD_SESSION` | a console session, for the account surface |
-| `TILEWARD_BASE_URL` | the API host |
+| `TILEWARD_BASE_URL` | the API host — serves `/v1` only |
+| `TILEWARD_CONSOLE_URL` | the console host — the account surface and `auth login` live here |
 | `TILEWARD_CONTEXT_URL` | the Context host |
 | `TILEWARD_CONVERSATION` | default conversation scope |
 | `TILEWARD_MODEL` | default model id |
