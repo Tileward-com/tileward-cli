@@ -1,0 +1,44 @@
+name: publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# NO API TOKEN. This uses PyPI Trusted Publishing (OIDC): PyPI is configured to trust this
+# repository and this workflow filename, and mints a short-lived credential per run. Nothing
+# long-lived is stored in the repo, in Actions secrets, or on anyone's laptop.
+#
+# Setup on PyPI, once: Publishing -> add a pending publisher for project `tileward`,
+# owner `Tileward-com`, repository `tileward-cli`, workflow `publish.yml`.
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  publish:
+    # Never publish a red build. A version number cannot be reused on PyPI, so a broken upload is
+    # permanent -- the only fix is a new version, and the bad one stays installable.
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install build
+      - run: python -m build
+      - name: Check the long description renders on PyPI
+        run: pip install twine && twine check dist/*
+      - uses: pypa/gh-action-pypi-publish@release/v1

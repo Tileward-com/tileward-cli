@@ -14,6 +14,7 @@
   <a href="https://pypi.org/project/tileward/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/tileward?color=0C6E58"></a>
   <a href="https://pypi.org/project/tileward/"><img alt="Downloads" src="https://img.shields.io/pypi/dm/tileward?color=8A5A0F"></a>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-9A3D8F">
+  <a href="https://github.com/Tileward-com/tileward-cli/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Tileward-com/tileward-cli/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 <p align="center">

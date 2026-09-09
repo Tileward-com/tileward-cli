@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of what pyproject claims. A package that says 3.9+ and is only
+        # ever run on 3.12 is claiming something nobody checks.
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      - run: ruff check src tests
+      - name: mypy
+        # The type check targets one version; running it twice would report the same result twice.
+        if: matrix.python-version == '3.13'
+        run: mypy src/tileward
