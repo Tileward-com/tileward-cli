@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tileward"
 dynamic = ["version"]
-description = "Tileward client library and CLI: run models, work with context and documents, and manage API keys."
+description = "Tileward client library and CLI (twcli): run models, govern them, and work with context and documents."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
@@ -45,11 +45,13 @@ dev = [
   "ruff>=0.5",
 ]
 
+# Every one of these must resolve for the PUBLIC, since PyPI renders them to anonymous visitors.
+# The source repo is private, so it is not listed: a "Source" link that 404s is worse than none.
 [project.urls]
 Homepage = "https://tileward.com"
-Documentation = "https://github.com/Tileward-com/tileward-cli#readme"
-Source = "https://github.com/Tileward-com/tileward-cli"
-Issues = "https://github.com/Tileward-com/tileward-cli/issues"
+Documentation = "https://tileward.com/docs"
+Dashboard = "https://app.tileward.com/account"
+Changelog = "https://pypi.org/project/tileward/#history"
 
 [project.scripts]
 twcli = "tileward.cli.main:main"

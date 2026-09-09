@@ -79,16 +79,26 @@ def check(
     inputs_list = payload_input if isinstance(payload_input, list) else [payload_input]
     for row, source in zip(rows, inputs_list):
         row.setdefault("input", source)
+    # Only the columns that actually carry data. A refusal often comes back as just
+    # `{"allowed": false}`, and four columns of dashes reads as "no topic, no score" rather than
+    # "the server did not send those".
+    optional = [c for c in ("topic", "title", "score", "reason")
+                if any(r.get(c) not in (None, "") for r in rows)]
     ctx.out.table(
         rows,
-        ["allowed", "topic", "title", "score", "reason"],
+        ["allowed", *optional, "input"] if len(rows) > 1 else ["allowed", *optional],
         empty="The guard returned no decision.",
     )
     if not ctx.out.as_json:
-        ctx.out.note(
-            f"{response.get('tokens', 0)} tokens billed"
-            + (f", {response.get('cost_micros', 0)} micros" if response.get("cost_micros") else "")
-        )
+        bits = []
+        # `tokens` is absent on some responses, and printing "0 tokens billed" for a missing
+        # field says the check was free, which is the opposite of what cost_micros reports.
+        if response.get("tokens") is not None:
+            bits.append(f"{response['tokens']} tokens")
+        if response.get("cost_micros") is not None:
+            bits.append(f"{response['cost_micros']} micros")
+        if bits:
+            ctx.out.note(" · ".join(bits) + " billed")
     if exit_code and not allowed(response):
         raise SystemExit(EXIT_REFUSED)
 
