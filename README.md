@@ -16,6 +16,13 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-9A3D8F">
 </p>
 
+<p align="center">
+  <a href="https://tileward.com">Product</a> ·
+  <a href="https://tileward.com/docs">Docs</a> ·
+  <a href="https://app.tileward.com/account">Dashboard</a> ·
+  <a href="https://github.com/Tileward-com/tileward-cli/releases">Releases</a>
+</p>
+
 ---
 
 ```console
@@ -273,7 +280,9 @@ That helper exists so nobody has to guess whether `/v1` belongs on the end.
 - **Product** — [tileward.com](https://tileward.com)
 - **Dashboard and keys** — [app.tileward.com/account](https://app.tileward.com/account)
 - **What we ship and how each number was measured** — [tileward.com/llms.txt](https://tileward.com/llms.txt)
+- **How `auth login` works** — [docs/device-auth.md](https://github.com/Tileward-com/tileward-cli/blob/main/docs/device-auth.md)
+- **Issues** — [github.com/Tileward-com/tileward-cli/issues](https://github.com/Tileward-com/tileward-cli/issues)
 
 ## License
 
-MIT.
+MIT — see [LICENSE](https://github.com/Tileward-com/tileward-cli/blob/main/LICENSE).
