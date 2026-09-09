@@ -1,0 +1,84 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tileward"
+dynamic = ["version"]
+description = "Tileward client library and CLI: run models, work with context and documents, and manage API keys."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+authors = [{ name = "Tileward" }]
+keywords = ["tileward", "llm", "openai-compatible", "mcp", "context", "governance", "cli"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+
+# httpx is the only hard dependency of the LIBRARY. click and rich are here rather than in an
+# extra because `pip install tileward` installs a console script, and a console script that
+# ImportErrors on first run is worse than three dependencies. Nothing under `tileward.` imports
+# them outside `tileward.cli`, so embedding the library never touches them.
+dependencies = [
+  "httpx>=0.24,<1",
+  "click>=8.0",
+  "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+  "pytest-asyncio>=0.23",
+  "respx>=0.20",
+  "mypy>=1.8",
+  "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://tileward.com"
+Documentation = "https://github.com/Tileward-com/tileward-cli#readme"
+Source = "https://github.com/Tileward-com/tileward-cli"
+Issues = "https://github.com/Tileward-com/tileward-cli/issues"
+
+[project.scripts]
+twcli = "tileward.cli.main:main"
+
+[tool.hatch.version]
+path = "src/tileward/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tileward"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "W"]
+# The package supports Python 3.9, so `typing.List` / `Optional[X]` are still the portable
+# spellings even with `from __future__ import annotations` in every module.
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.mypy]
+# mypy no longer accepts a 3.9 target, so it checks against 3.10 while the package itself still
+# installs on 3.9 (see `requires-python`). Nothing here uses 3.10-only syntax; the 3.9 floor is
+# held by ruff's `target-version` and by the classifiers.
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
+ignore_missing_imports = true
