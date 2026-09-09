@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 316 234" role="img" aria-label="Tileward">
+  <rect x="84"  y="2"   width="66" height="66" rx="16" fill="#dabf96"/>
+  <rect x="166" y="2"   width="66" height="66" rx="16" fill="#a1c0af"/>
+  <rect x="248" y="2"   width="66" height="66" rx="16" fill="#77b6a1"/>
+  <rect x="2"   y="84"  width="66" height="66" rx="16" fill="#ce6653"/>
+  <rect x="84"  y="84"  width="66" height="66" rx="16" fill="#d6a45d"/>
+  <rect x="166" y="84"  width="66" height="66" rx="16" fill="#7fb895"/>
+  <rect x="248" y="84"  width="66" height="66" rx="16" fill="#5a8f7b"/>
+  <rect x="84"  y="166" width="66" height="66" rx="16" fill="#d19348"/>
+  <rect x="166" y="166" width="66" height="66" rx="16" fill="#6ca680"/>
+</svg>

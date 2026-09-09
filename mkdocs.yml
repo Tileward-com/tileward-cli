@@ -13,7 +13,7 @@ docs_dir: docs
 theme:
   name: material
   logo: assets/logo.png
-  favicon: assets/mark.png
+  favicon: assets/mark.svg
   features:
     - navigation.sections
     - navigation.top
