@@ -282,12 +282,8 @@ That helper exists so nobody has to guess whether `/v1` belongs on the end.
 
 ## Links
 
-- **Documentation** — [https://tileward-com.github.io/tileward-cli/](https://tileward-com.github.io/tileward-cli/)
-- **Product** — [tileward.com](https://tileward.com)
+- **Documentation** — [tileward-com.github.io/tileward-cli](https://tileward-com.github.io/tileward-cli/)
 - **Dashboard and keys** — [app.tileward.com/account](https://app.tileward.com/account)
-- **What we ship and how each number was measured** — [tileward.com/llms.txt](https://tileward.com/llms.txt)
-- **Connect a chat client, editor or framework** — [tileward.com/docs](https://tileward.com/docs/)
-- **How `auth login` works** — [https://tileward-com.github.io/tileward-cli/device-auth/](https://tileward-com.github.io/tileward-cli/device-auth/)
 - **Issues** — [github.com/Tileward-com/tileward-cli/issues](https://github.com/Tileward-com/tileward-cli/issues)
 
 ## License
