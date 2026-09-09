@@ -1,4 +1,4 @@
-# tileward
+# Tileward
 
 **Run large models on hardware you own, governed.**
 

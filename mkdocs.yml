@@ -1,4 +1,4 @@
-site_name: tileward
+site_name: Tileward
 site_description: The Tileward client library and twcli command line.
 site_url: https://tileward-com.github.io/tileward-cli/
 repo_url: https://github.com/Tileward-com/tileward-cli
@@ -12,7 +12,8 @@ docs_dir: docs
 
 theme:
   name: material
-  logo: https://tileward.com/logo.png
+  logo: assets/logo.png
+  favicon: assets/mark.png
   features:
     - navigation.sections
     - navigation.top

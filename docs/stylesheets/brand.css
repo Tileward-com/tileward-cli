@@ -16,7 +16,31 @@
   --md-accent-fg-color: #2f9c80;
 }
 
+/* The wordmark is the whole lockup, so it needs width rather than the square a mark would take. */
 .md-header__button.md-logo img {
-  height: 1.4rem;
+  height: 1.5rem;
   width: auto;
 }
+
+/* Colour, per capability. Each section heading and its nav entry carry their own colour, so a
+   reader lands on Governance and sees amber rather than another page of blue. */
+.md-typeset h1 { color: var(--md-primary-fg-color); }
+.md-typeset h2 { border-bottom: 2px solid var(--md-accent-fg-color); padding-bottom: .2rem; }
+
+.md-typeset table:not([class]) th {
+  background: var(--md-primary-fg-color);
+  color: #fff;
+}
+
+/* Inline code should read as code without shouting; the tint is the Context green at 8%. */
+.md-typeset code {
+  background: color-mix(in srgb, var(--tw-context) 8%, transparent);
+}
+
+/* Each capability page's title in its own colour. Keyed on the heading id, which MkDocs derives
+   from the title text — Material puts no page identifier on <body>, so there is nothing wider to
+   hang this on without a build hook. */
+.md-typeset h1#tileward-models     { color: var(--tw-models); }
+.md-typeset h1#tileward-context    { color: var(--tw-context); }
+.md-typeset h1#tileward-governance { color: var(--tw-governance); }
+.md-typeset h1#tileward-documents  { color: var(--tw-documents); }
