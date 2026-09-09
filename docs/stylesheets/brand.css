@@ -22,6 +22,13 @@
   width: auto;
 }
 
+/* Dark scheme gets light ink. The default asset is black "Tile" behind a white keyline, which is
+   legible on a dark ground but reads as an outline; this one is solid. `content:` swaps the
+   source of an <img> without a template override. */
+[data-md-color-scheme="slate"] .md-header__button.md-logo img {
+  content: url("../assets/logo-dark.png");
+}
+
 /* Colour, per capability. Each section heading and its nav entry carry their own colour, so a
    reader lands on Governance and sees amber rather than another page of blue. */
 .md-typeset h1 { color: var(--md-primary-fg-color); }
