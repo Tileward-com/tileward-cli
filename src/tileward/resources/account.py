@@ -12,6 +12,7 @@ AUDIT = "/api/account/audit"
 BILLING = "/api/billing/summary"
 CONTEXT_STATS = "/api/account/twinkle-stats"
 CONTEXT_SAVINGS = "/api/account/twinkle-savings"
+CONTEXT_DAILY = "/api/account/context/heatmap"
 
 
 def balance_usd(payload: Dict[str, Any]) -> Optional[float]:
@@ -44,6 +45,12 @@ class Account:
     def context_savings(self) -> Dict[str, Any]:
         return self._client._transport.request("GET", CONTEXT_SAVINGS, auth="session")
 
+    def context_savings_daily(self, *, days: Optional[int] = None) -> Dict[str, Any]:
+        """Tokens saved per UTC day, up to a year: `series` of `{label, ts, tokens}`."""
+        return self._client._transport.request(
+            "GET", CONTEXT_DAILY, params={"days": days}, auth="session"
+        )
+
 
 class AsyncAccount:
     def __init__(self, client: Any) -> None:
@@ -65,3 +72,8 @@ class AsyncAccount:
 
     async def context_savings(self) -> Dict[str, Any]:
         return await self._client._transport.request("GET", CONTEXT_SAVINGS, auth="session")
+
+    async def context_savings_daily(self, *, days: Optional[int] = None) -> Dict[str, Any]:
+        return await self._client._transport.request(
+            "GET", CONTEXT_DAILY, params={"days": days}, auth="session"
+        )

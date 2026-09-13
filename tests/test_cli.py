@@ -502,3 +502,75 @@ def test_context_threads_shows_the_conversation_tokens_and_last_activity(isolate
     assert "thread-99" in result.output
     assert "3,444" in result.output
     assert local_minute(last) in result.output
+
+
+def savings_payload(**changes):
+    payload = {
+        "available": True, "window": "30d", "window_hours": 720, "stale": False,
+        "snapshot_age_hours": 0.2, "snapshot_writer_stalled": False,
+        "saved": 38174185, "spent": 7175956, "reduction_pct": 84.2,
+        "weekly": 6875782460, "lifetime": 76367648, "lifetime_reduction_pct": 86.3,
+        "by_conversation": [
+            {"conversation": "b228754b-44d6-49b4-8033-fa4447566847", "title": "Release checklist",
+             "client": "claude-code", "saved": 9075288, "spent": 539071, "reduction_pct": 94.4},
+        ],
+        "series": [{"label": "09-12", "saved": 2040773359, "spent": 629860}],
+        "granularity": "day",
+    }
+    payload.update(changes)
+    return payload
+
+
+def serve_savings(payload, daily=None):
+    respx.get("https://console.test/api/account/twinkle-savings").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    return respx.get("https://console.test/api/account/context/heatmap").mock(
+        return_value=httpx.Response(200, json=daily or {"available": False})
+    )
+
+
+@respx.mock
+def test_account_savings_prints_tables_not_the_raw_payload(isolated_config):
+    import time
+
+    now = time.time()
+    serve_savings(savings_payload(), daily={"available": True, "series": [
+        {"label": "2026-07-01", "ts": now - 60 * 86400, "tokens": 111},
+        {"label": "2026-09-12", "ts": now - 86400, "tokens": 4046561},
+    ]})
+    result = session_run(["account", "savings"])
+    assert result.exit_code == 0
+    assert "84.2%" in result.output
+    assert "Release checklist" in result.output
+    assert "4,046,561" in result.output
+    assert "2026-07-01" not in result.output
+    assert "{'" not in result.output
+    # The day table comes from the daily endpoint; the payload's own `weekly` and `series` are
+    # not printed.
+    assert "6,875,782,460" not in result.output
+    assert "2,040,773,359" not in result.output
+
+
+@respx.mock
+def test_account_savings_says_when_it_is_unavailable(isolated_config):
+    daily = serve_savings({"available": False})
+    result = session_run(["account", "savings"])
+    assert result.exit_code == 0
+    assert "not available" in result.output
+    assert not daily.called
+
+
+@respx.mock
+def test_account_savings_json_is_the_payload_as_sent(isolated_config):
+    daily = serve_savings(savings_payload())
+    result = session_run(["account", "savings", "--json"])
+    assert json.loads(result.output)["series"][0]["saved"] == 2040773359
+    assert not daily.called
+
+
+@respx.mock
+def test_account_savings_warns_when_the_snapshot_is_stale(isolated_config):
+    serve_savings(savings_payload(stale=True, snapshot_age_hours=30.0))
+    result = session_run(["account", "savings"])
+    assert "30.0 hours old" in result.output
