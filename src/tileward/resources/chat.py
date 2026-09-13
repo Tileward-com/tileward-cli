@@ -7,7 +7,7 @@ A governed refusal is not an HTTP error: it arrives as a completion with
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterable, Iterator
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
 from typing import Any, Dict, List, Literal, Optional, Union, overload
 
 from ..errors import GuardRefusal
@@ -128,6 +128,7 @@ class Completions:
         top_p: Optional[float] = None,
         stream: bool = False,
         timeout: Optional[float] = None,
+        headers: Optional[Mapping[str, str]] = None,
         **extra: Any,
     ) -> Union[Dict[str, Any], Iterator[Dict[str, Any]]]:
         resolved = model or self._client.models.default()
@@ -149,8 +150,12 @@ class Completions:
             extra=extra or None,
         )
         if stream:
-            return self._client._transport.stream_sse("POST", PATH, json=body, timeout=timeout)
-        return self._client._transport.request("POST", PATH, json=body, timeout=timeout)
+            return self._client._transport.stream_sse(
+                "POST", PATH, json=body, headers=headers, timeout=timeout
+            )
+        return self._client._transport.request(
+            "POST", PATH, json=body, headers=headers, timeout=timeout
+        )
 
 
 class Chat:
@@ -209,6 +214,7 @@ class AsyncCompletions:
         top_p: Optional[float] = None,
         stream: bool = False,
         timeout: Optional[float] = None,
+        headers: Optional[Mapping[str, str]] = None,
         **extra: Any,
     ) -> Union[Dict[str, Any], AsyncIterator[Dict[str, Any]]]:
         resolved = model or await self._client.models.default()
@@ -232,8 +238,12 @@ class AsyncCompletions:
         if stream:
             # Not awaited: the async generator is the return value, and awaiting it here would
             # buffer the whole answer before the caller saw a token.
-            return self._client._transport.stream_sse("POST", PATH, json=body, timeout=timeout)
-        return await self._client._transport.request("POST", PATH, json=body, timeout=timeout)
+            return self._client._transport.stream_sse(
+                "POST", PATH, json=body, headers=headers, timeout=timeout
+            )
+        return await self._client._transport.request(
+            "POST", PATH, json=body, headers=headers, timeout=timeout
+        )
 
 
 class AsyncChat:

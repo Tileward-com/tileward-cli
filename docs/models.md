@@ -65,9 +65,9 @@ shadow yours.
 
 ### Parameters
 
-`model`, `system`, `max_tokens`, `temperature`, `top_p`, `stream`, `timeout`. Anything else you
-pass is forwarded to the API untouched, which is how you reach a parameter this client does not
-know about yet.
+`model`, `system`, `max_tokens`, `temperature`, `top_p`, `stream`, `timeout`, `headers`. Anything
+else you pass is forwarded to the API untouched, which is how you reach a parameter this client
+does not know about yet.
 
 ```python
 tw.chat.completions.create("Hello", seed=7, stop=["\n\n"])
@@ -76,8 +76,8 @@ tw.chat.completions.create("Hello", seed=7, stop=["\n\n"])
 ## From the command line
 
 ```bash
-twcli chat "Say hello in one sentence."
-twcli chat -i                                  # a REPL that keeps the transcript
+twcli chat                                     # a conversation that keeps the transcript
+twcli chat "Say hello in one sentence."        # one answer
 cat notes.md | twcli chat --system "You summarise."
 twcli chat "..." --usage                       # print token usage after the answer
 twcli chat "..." -m gpt-oss-20b --max-tokens 200
@@ -87,16 +87,21 @@ Streaming is on when stdout is a terminal and off when it is a pipe: a consumer 
 wants the whole answer, not tokens interleaved with progress. `--stream` / `--no-stream` overrides
 that.
 
+An answer may use everything the model's context window leaves after the prompt, so a long one is
+not cut short. `--max-tokens` caps it lower.
+
 `--remember` writes each turn into Tileward Context and recalls before answering:
 
 ```bash
-twcli chat -i -c project-x --remember
+twcli chat -c project-x --remember
 ```
 
 Pair it with `-c`. Without one the transcript joins the key's shared default store — the REPL warns
 once when that is about to happen. See [Tileward Context](context.md).
 
-In the REPL, `/reset` clears the transcript and `/exit` (or Ctrl-D) leaves.
+In a conversation, `/reset` clears the transcript and `/exit` (or Ctrl-D) leaves. Ctrl-C stops an
+answer without ending the conversation. Each conversation gets a thread of its own in Tileward
+Context.
 
 ## Model detail
 

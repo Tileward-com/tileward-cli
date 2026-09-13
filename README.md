@@ -107,7 +107,7 @@ export TILEWARD_API_KEY="tw_live_..."
 ```
 twcli auth login|logout|status          sign in, and see what this machine holds
 twcli models list|show                  what is served right now
-twcli chat [PROMPT] [-i]                one prompt, a pipe, or a REPL
+twcli chat [PROMPT]                     a conversation, or one answer to a prompt or pipe
 twcli guard check TEXT [--allow ...]    allow / deny, no generation
 twcli context recall|remember|pin|forget|topics|stats|threads|reset|purge
 twcli docs ls|add|rm|search             your own files
