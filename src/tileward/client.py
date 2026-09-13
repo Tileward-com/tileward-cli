@@ -7,7 +7,7 @@ on the Context host and speak MCP. One client owns both connections.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import httpx
 
@@ -47,6 +47,7 @@ class _ClientBase:
         default_headers: Optional[Mapping[str, str]] = None,
         user_agent_suffix: Optional[str] = None,
         load_config: bool = True,
+        api_key_provider: Optional[Callable[[], Optional[str]]] = None,
     ) -> None:
         # An explicit argument always wins. The stored profile is consulted only for what the
         # caller left out, and only when they have not opted out of file config entirely —
@@ -70,6 +71,9 @@ class _ClientBase:
         self.max_retries = max_retries
         self.default_headers = dict(default_headers or {})
         self.user_agent_suffix = user_agent_suffix
+        # Consulted at most once, the first time a request needs a key and none was given. The key
+        # it returns goes to both transports, so Context calls and the rest share one.
+        self._api_key_provider = api_key_provider
 
     @property
     def has_api_key(self) -> bool:
@@ -78,6 +82,17 @@ class _ClientBase:
     @property
     def has_session(self) -> bool:
         return bool(self.session_token)
+
+    def _provide_api_key(self) -> Optional[str]:
+        provider, self._api_key_provider = self._api_key_provider, None
+        if not self.api_key and provider is not None:
+            self.api_key = provider() or None
+        if self.api_key:
+            for name in ("_transport", "_context_transport"):
+                transport = getattr(self, name, None)
+                if transport is not None:
+                    transport.api_key = self.api_key
+        return self.api_key
 
     def _transport_kwargs(self) -> Dict[str, Any]:
         return {
@@ -121,6 +136,8 @@ class Tileward(_ClientBase):
             user_agent=self._transport.user_agent,
             client=http_client,
         )
+        self._transport.api_key_provider = self._provide_api_key
+        self._context_transport.api_key_provider = self._provide_api_key
         self.models = Models(self)
         self.chat = Chat(self)
         self.guard = Guard(self)
@@ -171,6 +188,8 @@ class AsyncTileward(_ClientBase):
             user_agent=self._transport.user_agent,
             client=http_client,
         )
+        self._transport.api_key_provider = self._provide_api_key
+        self._context_transport.api_key_provider = self._provide_api_key
         self.models = AsyncModels(self)
         self.chat = AsyncChat(self)
         self.guard = AsyncGuard(self)

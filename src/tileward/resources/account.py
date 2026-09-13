@@ -42,8 +42,11 @@ class Account:
     def context_stats(self) -> Dict[str, Any]:
         return self._client._transport.request("GET", CONTEXT_STATS, auth="session")
 
-    def context_savings(self) -> Dict[str, Any]:
-        return self._client._transport.request("GET", CONTEXT_SAVINGS, auth="session")
+    def context_savings(self, *, window: Optional[str] = None) -> Dict[str, Any]:
+        """Savings over a named window, such as `24h`, `30d` or `all`."""
+        return self._client._transport.request(
+            "GET", CONTEXT_SAVINGS, params={"window": window}, auth="session"
+        )
 
     def context_savings_daily(self, *, days: Optional[int] = None) -> Dict[str, Any]:
         """Tokens saved per UTC day, up to a year: `series` of `{label, ts, tokens}`."""
@@ -70,8 +73,10 @@ class AsyncAccount:
     async def context_stats(self) -> Dict[str, Any]:
         return await self._client._transport.request("GET", CONTEXT_STATS, auth="session")
 
-    async def context_savings(self) -> Dict[str, Any]:
-        return await self._client._transport.request("GET", CONTEXT_SAVINGS, auth="session")
+    async def context_savings(self, *, window: Optional[str] = None) -> Dict[str, Any]:
+        return await self._client._transport.request(
+            "GET", CONTEXT_SAVINGS, params={"window": window}, auth="session"
+        )
 
     async def context_savings_daily(self, *, days: Optional[int] = None) -> Dict[str, Any]:
         return await self._client._transport.request(
