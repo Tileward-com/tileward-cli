@@ -2,18 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Optional
+import time
+from typing import Any, Dict, List, Optional
 
 import click
 
+from ... import errors
 from ..main import Ctx, common, pass_ctx
-from ..output import rows_from
+from ..output import rows_from, truncate
 
 MICROS_PER_USD = 1_000_000
 
 
 def _usd(micros: object) -> Optional[float]:
     return micros / MICROS_PER_USD if isinstance(micros, (int, float)) else None
+
+
+def _pct(value: object) -> Optional[str]:
+    return f"{value:.1f}%" if isinstance(value, (int, float)) else None
 
 
 @click.group("account")
@@ -96,12 +102,75 @@ def audit(ctx: Ctx, limit: Optional[int]) -> None:
 @common()
 @pass_ctx
 def savings(ctx: Ctx) -> None:
-    """What Context has saved: stored bytes, and tokens not re-sent."""
+    """What Context has saved: tokens not re-sent, in total, by conversation, and by day."""
     ctx.require_session()
     payload = ctx.client.account.context_savings()
     ctx.emit(payload)
-    if isinstance(payload, dict):
-        ctx.out.pairs(payload, title="context savings")
+    if ctx.out.as_json or not isinstance(payload, dict):
+        return
+    if not payload.get("available"):
+        ctx.out.note("Context savings are not available for this account.")
+        return
+    stale = payload.get("stale") or payload.get("snapshot_writer_stalled")
+    age = payload.get("snapshot_age_hours")
+    if stale and isinstance(age, (int, float)):
+        ctx.out.warn(f"These figures come from a snapshot {age:.1f} hours old.")
+
+    ctx.out.pairs(
+        {
+            "Tokens saved": payload.get("saved"),
+            "Tokens sent": payload.get("spent"),
+            "Reduction": _pct(payload.get("reduction_pct")),
+            "Saved, all time": payload.get("lifetime"),
+            "Reduction, all time": _pct(payload.get("lifetime_reduction_pct")),
+        },
+        title=f"context savings, {payload.get('window') or 'window'}",
+    )
+
+    conversations = [
+        {
+            "conversation": truncate(row.get("title") or row.get("conversation") or "", 44),
+            "client": row.get("client"),
+            "saved": row.get("saved"),
+            "sent": row.get("spent"),
+            "reduction": _pct(row.get("reduction_pct")),
+        }
+        for row in rows_from(payload.get("by_conversation") or [])
+    ]
+    if conversations:
+        ctx.out.print()
+        ctx.out.table(
+            conversations,
+            ["conversation", "client", "saved", "sent", "reduction"],
+            title="by conversation",
+        )
+
+    days = _days_in_window(ctx, payload.get("window_hours"))
+    if days:
+        ctx.out.print()
+        ctx.out.table(days, ["day", "saved"], title="by day")
+
+
+def _days_in_window(ctx: Ctx, window_hours: object) -> List[Dict[str, Any]]:
+    """Saved tokens per day across the window, from the daily endpoint.
+
+    Not the savings payload's own `series`: the daily figures are the ones that add up to the
+    window's total, so they are the ones worth a table.
+    """
+    try:
+        daily = ctx.client.account.context_savings_daily()
+    except errors.TilewardError:
+        return []
+    if not isinstance(daily, dict) or not daily.get("available"):
+        return []
+    rows = rows_from(daily.get("series") or [])
+    if isinstance(window_hours, (int, float)):
+        since = time.time() - window_hours * 3600
+        # A day counts if any of it falls inside the window; `ts` is the day's UTC midnight.
+        rows = [
+            r for r in rows if isinstance(r.get("ts"), (int, float)) and r["ts"] + 86400 > since
+        ]
+    return [{"day": r.get("label"), "saved": r.get("tokens")} for r in rows]
 
 
 def register(cli: click.Group) -> None:
