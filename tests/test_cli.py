@@ -331,6 +331,17 @@ def test_remember_without_a_conversation_warns_about_the_shared_store(isolated_c
 
 
 @respx.mock
+def test_a_conversation_id_context_would_rewrite_is_warned_about(isolated_config):
+    respx.post("https://context.test").mock(
+        return_value=httpx.Response(200, json=tool_result({"stored": True}))
+    )
+    result = run(["-c", "run 1", "context", "remember", "a fact"])
+    assert result.exit_code == 0
+    assert "stores conversation 'run 1' as 'run-1'" in result.output
+    assert "ConversationIdWarning" not in result.output
+
+
+@respx.mock
 def test_docs_ls_lists_documents(isolated_config):
     respx.post("https://context.test").mock(
         return_value=httpx.Response(

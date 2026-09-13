@@ -7,9 +7,11 @@ Exit codes: 0 fine, 1 error, 2 bad usage, 3 not signed in, 4 refused by governan
 from __future__ import annotations
 
 import sys
+import warnings
 from typing import Any, Optional
 
 import click
+from rich.markup import escape
 
 from .. import errors
 from .._version import __version__
@@ -204,6 +206,20 @@ def cli(
         color=not no_color,
         timeout=timeout,
     )
+    # The library warns through `warnings` when Context will rewrite a conversation id. Say it the
+    # way every other CLI warning is said, for the life of this command only.
+    ctx.with_resource(warnings.catch_warnings())
+    warnings.showwarning = _warning_printer(ctx.obj.out, warnings.showwarning)
+
+
+def _warning_printer(out: Out, fallback: Any) -> Any:
+    def show(message: Any, category: Any, *args: Any, **kwargs: Any) -> None:
+        if issubclass(category, errors.ConversationIdWarning):
+            out.warn(escape(str(message)))
+        else:
+            fallback(message, category, *args, **kwargs)
+
+    return show
 
 
 def _register() -> None:

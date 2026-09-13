@@ -13,6 +13,10 @@ class ConfigError(TilewardError):
     """The client is not configured well enough to make the call (no key, no base URL, ...)."""
 
 
+class ConversationIdWarning(UserWarning):
+    """A conversation id that Context will store under a different name."""
+
+
 class APIError(TilewardError):
     """The API answered, and the answer was an error."""
 

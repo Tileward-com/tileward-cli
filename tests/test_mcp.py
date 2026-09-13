@@ -1,13 +1,21 @@
 from __future__ import annotations
 
 import json
+import warnings
 
 import httpx
 import pytest
 import respx
 
 from tileward import errors
-from tileward._mcp import ContextTransport, build_payload, conversation_headers, parse_body, unwrap
+from tileward._mcp import (
+    ContextTransport,
+    build_payload,
+    canonical_conversation,
+    conversation_headers,
+    parse_body,
+    unwrap,
+)
 
 
 def tool_result(value):
@@ -37,6 +45,35 @@ def test_conversation_is_sent_under_both_spellings():
 def test_no_conversation_sends_no_header():
     assert conversation_headers(None) == {}
     assert conversation_headers("  ") == {}
+
+
+@pytest.mark.parametrize(
+    "raw, stored",
+    [
+        ("run 1", "run-1"),
+        ("run:1", "run-1"),
+        ("run/1", "run-1"),
+        ("u2:secrets", "u2-secrets"),
+        ("p" * 65, "p" * 64),
+        ("///", "---"),
+    ],
+)
+def test_the_canonical_id_follows_the_server_rule(raw, stored):
+    assert canonical_conversation(raw) == stored
+
+
+def test_an_id_the_server_would_change_warns_and_is_sent_as_given():
+    with pytest.warns(errors.ConversationIdWarning, match="'run-1'"):
+        headers = conversation_headers("run 1")
+    assert headers["X-Tileward-Conversation"] == "run 1"
+
+
+def test_a_well_formed_id_does_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        conversation_headers("thread-42")
+        conversation_headers("0b7e1c2a-5d1f-4a8e-9c3b-1f2e3d4c5b6a")
+        conversation_headers("a" * 64)
 
 
 def test_parses_a_plain_json_body():

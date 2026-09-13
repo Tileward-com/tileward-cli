@@ -8,6 +8,8 @@ generation reads only the older name.
 from __future__ import annotations
 
 import json as _json
+import re
+import warnings
 from collections.abc import Mapping
 from typing import Any, Dict, Optional
 
@@ -33,12 +35,31 @@ def build_payload(tool: str, arguments: Mapping[str, Any], request_id: int = 1) 
     }
 
 
+# The server's rule for a conversation id, applied without an error: any other character becomes
+# "-" and the id is cut at 64, so ids that map to the same name share one store.
+_CONVERSATION_UNSAFE = re.compile(r"[^a-zA-Z0-9._-]")
+CONVERSATION_MAX_LENGTH = 64
+
+
+def canonical_conversation(conversation: str) -> str:
+    """The id Context stores `conversation` under."""
+    return _CONVERSATION_UNSAFE.sub("-", conversation)[:CONVERSATION_MAX_LENGTH] or "default"
+
+
 def conversation_headers(conversation: Optional[str]) -> Dict[str, str]:
     if not conversation:
         return {}
     value = str(conversation).strip()
     if not value:
         return {}
+    stored = canonical_conversation(value)
+    if stored != value:
+        warnings.warn(
+            f"Context stores conversation {value!r} as {stored!r}; "
+            "any id that maps to the same name shares that store.",
+            errors.ConversationIdWarning,
+            stacklevel=2,
+        )
     return {"X-Tileward-Conversation": value, "X-Twinkle-Conversation": value}
 
 
