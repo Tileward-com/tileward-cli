@@ -14,7 +14,18 @@ class ConfigError(TilewardError):
 
 
 class ConversationIdWarning(UserWarning):
-    """A conversation id that Context will store under a different name."""
+    """A conversation id Context will store under a different name: `conversation` -> `stored`."""
+
+    def __init__(self, conversation: str = "", stored: str = "") -> None:
+        # One message for every id, so Python's default filter shows it once per calling line
+        # rather than once per id, however many ids a long-running process sends.
+        super().__init__(
+            "Context will store a conversation id under a different name: only letters, digits, "
+            "'.', '_' and '-' are kept, up to 64 characters. Ids that map to the same name share "
+            "one store."
+        )
+        self.conversation = conversation
+        self.stored = stored
 
 
 class APIError(TilewardError):

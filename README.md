@@ -194,10 +194,10 @@ tw.context.pin("The customer is ACME.")             # included in every recall
 shared store, and a recall in one thread hands back another thread's material. There is no safety
 net underneath this: a caller that names no conversation joins `default` along with everyone else.
 
-A conversation id may use letters, digits, `.`, `_` and `-`, up to 64 characters. Context replaces
-any other character with `-` and cuts the rest, without an error, so `run 1` and `run:1` are one
-conversation, and so are two ids that share their first 64 characters. The client warns with
-`ConversationIdWarning` when an id will be changed.
+A conversation id may use letters, digits, `.`, `_` and `-`, up to 64 characters; spaces around it
+are ignored. Context replaces any other character with `-` and cuts the rest, without an error, so
+`run 1` and `run:1` are one conversation, and so are two ids that share their first 64 characters.
+The client warns with `ConversationIdWarning` when an id will be changed.
 
 `forget()` retires a topic from recall; the stored turns remain. `purge_account()` deletes data.
 

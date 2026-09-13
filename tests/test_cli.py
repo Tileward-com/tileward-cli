@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import warnings
 
 import httpx
 import respx
 from click.testing import CliRunner
 
-from tileward.cli.main import cli
+from tileward.cli.main import _warning_printer, cli
+from tileward.cli.output import Out
 
 
 def run(args, env=None, stdin=None):
@@ -335,10 +337,28 @@ def test_a_conversation_id_context_would_rewrite_is_warned_about(isolated_config
     respx.post("https://context.test").mock(
         return_value=httpx.Response(200, json=tool_result({"stored": True}))
     )
+    shown = warnings.showwarning
     result = run(["-c", "run 1", "context", "remember", "a fact"])
     assert result.exit_code == 0
     assert "stores conversation 'run 1' as 'run-1'" in result.output
     assert "ConversationIdWarning" not in result.output
+    assert warnings.showwarning is shown, "the CLI must put Python's printer back"
+
+
+@respx.mock
+def test_an_id_with_markup_characters_is_printed_as_typed(isolated_config):
+    respx.post("https://context.test").mock(
+        return_value=httpx.Response(200, json=tool_result({"stored": True}))
+    )
+    result = run(["-c", "[b]x", "context", "remember", "a fact"])
+    assert "'[b]x'" in result.output
+
+
+def test_the_cli_printer_leaves_other_warnings_to_python():
+    seen = []
+    show = _warning_printer(Out(), lambda *args: seen.append(args))
+    show(UserWarning("unrelated"), UserWarning, "elsewhere.py", 1)
+    assert [str(args[0]) for args in seen] == ["unrelated"]
 
 
 @respx.mock

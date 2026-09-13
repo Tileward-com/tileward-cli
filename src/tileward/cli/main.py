@@ -214,8 +214,13 @@ def cli(
 
 def _warning_printer(out: Out, fallback: Any) -> Any:
     def show(message: Any, category: Any, *args: Any, **kwargs: Any) -> None:
-        if issubclass(category, errors.ConversationIdWarning):
-            out.warn(escape(str(message)))
+        if isinstance(message, errors.ConversationIdWarning):
+            out.warn(
+                escape(
+                    f"Context stores conversation {message.conversation!r} as "
+                    f"{message.stored!r}; any id that maps to the same name shares that store."
+                )
+            )
         else:
             fallback(message, category, *args, **kwargs)
 
