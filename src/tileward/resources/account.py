@@ -33,10 +33,23 @@ class Account:
     def billing(self) -> Dict[str, Any]:
         return self._client._transport.request("GET", BILLING, auth="session")
 
-    def audit(self, *, limit: Optional[int] = None) -> Dict[str, Any]:
-        """Request history, metadata only — never prompt or completion text."""
+    def audit(
+        self,
+        *,
+        key_id: Optional[int] = None,
+        outcome: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Request history, metadata only — never prompt or completion text.
+
+        `key_id` and `outcome` (allowed, rejected, refused, failed) narrow it. At most 50 rows come
+        back; `total` counts every match.
+        """
         return self._client._transport.request(
-            "GET", AUDIT, params={"limit": limit}, auth="session"
+            "GET",
+            AUDIT,
+            params={"key_id": key_id, "outcome": outcome, "limit": limit},
+            auth="session",
         )
 
     def context_stats(self) -> Dict[str, Any]:
@@ -62,9 +75,18 @@ class AsyncAccount:
     async def billing(self) -> Dict[str, Any]:
         return await self._client._transport.request("GET", BILLING, auth="session")
 
-    async def audit(self, *, limit: Optional[int] = None) -> Dict[str, Any]:
+    async def audit(
+        self,
+        *,
+        key_id: Optional[int] = None,
+        outcome: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
         return await self._client._transport.request(
-            "GET", AUDIT, params={"limit": limit}, auth="session"
+            "GET",
+            AUDIT,
+            params={"key_id": key_id, "outcome": outcome, "limit": limit},
+            auth="session",
         )
 
     async def context_stats(self) -> Dict[str, Any]:

@@ -80,13 +80,19 @@ def usage(ctx: Ctx) -> None:
 
 
 @account_group.command("audit")
-@click.option("--limit", type=int, help="Rows to return.")
+@click.option("--key-id", type=int, help="Only requests made with this key.")
+@click.option(
+    "--outcome",
+    help="Only this outcome: allowed, rejected, refused or failed. The guard's refusals are "
+    "rejected; refused is a model that declined.",
+)
+@click.option("--limit", type=int, help="Rows to return, up to 50.")
 @common()
 @pass_ctx
-def audit(ctx: Ctx, limit: Optional[int]) -> None:
+def audit(ctx: Ctx, key_id: Optional[int], outcome: Optional[str], limit: Optional[int]) -> None:
     """Request history — metadata only, never prompt or completion text."""
     ctx.require_session()
-    payload = ctx.client.account.audit(limit=limit)
+    payload = ctx.client.account.audit(key_id=key_id, outcome=outcome, limit=limit)
     rows = payload.get("rows") if isinstance(payload, dict) else payload
     ctx.emit(payload)
     ctx.out.table(

@@ -67,7 +67,7 @@ twcli guard check -f prompts.txt --allow customer_support
 
 ## The response
 
-`check` returns the raw `{tokens, cost_micros, result}`. `allows` reduces it to a bool that is
+`check` returns the raw `{cost_micros, result}`. `allows` reduces it to a bool that is
 `True` only if **every** decision allowed — so a batch with one refusal is a refusal.
 
 Helpers for reading a raw response:
@@ -103,8 +103,10 @@ having: the enforcement does not depend on every code path remembering to pass `
 ## Refusals in chat
 
 A governed refusal on a chat call is **not** an HTTP error and not an exception at the transport
-level. It arrives as an ordinary completion with `finish_reason: "content_filter"` and zero tokens
-billed — you are not charged for a refusal. `chat.completions.create` passes it through;
-`chat.say` raises `GuardRefusal`. See [Errors](errors.md).
+level. It arrives as an ordinary completion with id `chatcmpl-governed` and
+`finish_reason: "content_filter"`. The guard's read of the prompt is billed as a check would be,
+and `usage` reports it as `prompt_tokens`, with `completion_tokens: 0`. `chat.completions.create`
+passes it through, `chat.say` raises `GuardRefusal`, and `refused_by_gate` tells it apart from a
+model that declined. See [Errors](errors.md).
 
 Every decision is recorded for audit, with no message text stored. `twcli account audit` reads it.

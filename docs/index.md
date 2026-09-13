@@ -47,8 +47,8 @@ client routes by which credential a call needs, so you never set this by hand â€
 points everything at one host will not work. See [Hosts](hosts.md).
 
 **A governed refusal is not an HTTP error.** It arrives as an ordinary completion with
-`finish_reason: "content_filter"` and zero tokens billed. `create()` passes it through; only
-`say()` raises `GuardRefusal`. See [Errors](errors.md).
+`finish_reason: "content_filter"`, billed for the guard's read of the prompt and nothing more.
+`create()` passes it through; only `say()` raises `GuardRefusal`. See [Errors](errors.md).
 
 ## Where to go next
 

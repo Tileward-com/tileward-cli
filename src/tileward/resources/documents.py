@@ -86,10 +86,10 @@ class Documents:
         return documents_of(self._call(LIST_DOCUMENTS, list_args(**kwargs)))
 
     def search(self, query: str, **kwargs: Any) -> List[Dict[str, Any]]:
-        """Documents whose stamped metadata matches `query`.
+        """The document list, filtered to titles and tags containing `query`.
 
-        This filters the LISTING, it does not search the text. To get answers out of the contents,
-        recall against them: `context.recall("...")` reads the ingested chunks.
+        It does not search what the documents say. To get answers out of the contents, recall
+        against them: `context.recall("...", scope="all")` reads the ingested chunks.
         """
         return self.list(query=query, **kwargs)
 
@@ -141,6 +141,7 @@ class AsyncDocuments:
         return documents_of(await self._call(LIST_DOCUMENTS, list_args(**kwargs)))
 
     async def search(self, query: str, **kwargs: Any) -> List[Dict[str, Any]]:
+        """The document list, filtered to titles and tags containing `query`; not the text."""
         return await self.list(query=query, **kwargs)
 
     async def ingest_text(

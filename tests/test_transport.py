@@ -129,6 +129,50 @@ def test_stream_error_status_raises_before_yielding():
         list(make().stream_sse("POST", "/v1/chat/completions", json={}))
 
 
+@respx.mock
+def test_a_stream_sends_nothing_until_read_and_has_headers_before_the_first_event():
+    route = respx.post("https://api.test/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            text='data: {"n": 1}\n\ndata: [DONE]\n\n',
+            headers={"content-type": "text/event-stream", "x-tileward-context-saved": "120"},
+        )
+    )
+    stream = make().stream_sse("POST", "/v1/chat/completions", json={})
+    assert not route.called
+    assert stream.headers["x-tileward-context-saved"] == "120"
+    assert list(stream) == [{"n": 1}]
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_a_stream_that_failed_to_open_is_not_sent_again():
+    route = respx.post("https://api.test/v1/chat/completions").mock(
+        return_value=httpx.Response(402, json={"error": {"message": "no funds"}})
+    )
+    stream = make().stream_sse("POST", "/v1/chat/completions", json={})
+    with pytest.raises(errors.InsufficientBalanceError):
+        next(stream)
+    assert list(stream) == []
+    with pytest.raises(errors.TilewardError):
+        _ = stream.headers
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_leaving_a_stream_unfinished_lets_go_of_the_response():
+    respx.post("https://api.test/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            text='data: {"n": 1}\n\ndata: {"n": 2}\n\ndata: [DONE]\n\n',
+            headers={"content-type": "text/event-stream"},
+        )
+    )
+    with make().stream_sse("POST", "/v1/chat/completions", json={}) as stream:
+        assert next(stream) == {"n": 1}
+    assert stream._response.is_closed
+
+
 # ---- the two hosts -------------------------------------------------------------------------
 # Found the hard way on 2026-09-09: every session-authed call was going to api.tileward.com,
 # which serves /v1 ONLY and answers everything else with 404 `wrong_host`. `twcli auth login`,

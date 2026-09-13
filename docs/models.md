@@ -73,6 +73,24 @@ does not know about yet.
 tw.chat.completions.create("Hello", seed=7, stop=["\n\n"])
 ```
 
+### What an answer was grounded on
+
+A completion that does not stream lists the passages it was given, and their documents, in
+`completion["tileward"]["sources"]`. No chunk of a stream carries that object, so the API sends the
+list as a response header, and `create(stream=True)` returns a stream that reads it before the
+first chunk:
+
+```python
+stream = tw.chat.completions.create("What does the handbook say about leave?", stream=True)
+stream.sources        # [{"doc": "Handbook", "folder": "policies"}, ...]
+for chunk in stream:
+    ...
+```
+
+`sources` is `[]` when nothing was grounded, and `None` when the header arrived but could not be
+read: its length is capped, so a long list can arrive cut off. `stream.headers` has the rest, such
+as `X-Tileward-Context-Saved`. Reading either sends the request if iterating has not.
+
 ## From the command line
 
 ```bash

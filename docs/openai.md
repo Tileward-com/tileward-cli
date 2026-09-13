@@ -51,9 +51,10 @@ the OpenAI surface, so they stay on this package's client or on the MCP endpoint
 | Tileward Documents | no | `tw.documents`, or MCP at `context.tileward.com` |
 
 A key with a bound policy is still governed on a call made through an OpenAI client — the
-enforcement is at the gate, not in the SDK. A refusal comes back as a completion with
-`finish_reason: "content_filter"`, which most OpenAI clients surface as an empty message rather
-than an error. Check the finish reason. See [Tileward Governance](governance.md).
+enforcement is at the gate, not in the SDK. A refusal comes back as a completion carrying the
+refusal text, with id `chatcmpl-governed` and `finish_reason: "content_filter"`, not as an error.
+Check the id: a model that declines also finishes with `content_filter`. See
+[Tileward Governance](governance.md).
 
 ## Mixing the two
 

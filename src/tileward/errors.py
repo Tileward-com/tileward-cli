@@ -72,9 +72,10 @@ class ConnectionError_(TilewardError):
 
 
 class GuardRefusal(TilewardError):
-    """A chat completion was refused by governance rather than answered.
+    """A chat completion was refused rather than answered.
 
-    Raised only by helpers that promise text back (``chat.say``). The low-level
+    Raised only by helpers that promise text back (``chat.say``), for the guard's refusal and for
+    a model that declined alike; ``refused_by_gate(exc.completion)`` says which. The low-level
     ``chat.completions.create`` returns the refusal as an ordinary completion with
     ``finish_reason == "content_filter"``, because that is what the API returns and a caller
     metering responses needs to see it.
