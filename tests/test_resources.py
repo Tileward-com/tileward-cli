@@ -82,6 +82,15 @@ def test_create_passes_a_refusal_through_untouched(client):
     assert out["choices"][0]["finish_reason"] == "content_filter"
 
 
+@respx.mock
+def test_create_sends_the_headers_it_is_given(client):
+    route = respx.post("https://api.test/v1/chat/completions").mock(
+        return_value=httpx.Response(200, json={"choices": []})
+    )
+    client.chat.completions.create("x", model="m", headers={"X-Tileward-Conversation": "t1"})
+    assert route.calls[0].request.headers["x-tileward-conversation"] == "t1"
+
+
 # ---- models -----------------------------------------------------------------------------
 @respx.mock
 def test_unknown_model_lists_what_is_actually_served(client):

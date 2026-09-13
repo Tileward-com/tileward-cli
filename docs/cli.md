@@ -19,7 +19,7 @@ twcli context recall --help
 | `twcli auth status` | what this profile holds, and whether it still works |
 | `twcli models list` | every model the API is serving |
 | `twcli models show` | everything the API reports about one model |
-| `twcli chat` | send a prompt and print the answer |
+| `twcli chat` | hold a conversation, or answer one prompt |
 | `twcli guard check` | decide whether text is in policy |
 | `twcli context recall` | retrieve only the history relevant to a query |
 | `twcli context remember` | store a turn so later recalls can find it |
@@ -94,7 +94,8 @@ interpretation — square brackets in an answer stay square brackets.
 ## Reading from stdin
 
 `chat`, `guard check`, `context recall`, `context remember` and `docs add` all read stdin when
-their argument is missing or is `-`:
+their argument is missing or is `-` (`chat` with no argument on a terminal holds a conversation
+instead):
 
 ```bash
 cat notes.md | twcli chat --system "You summarise."
