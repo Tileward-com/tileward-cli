@@ -296,3 +296,23 @@ def test_list_returns_the_apis_own_rows_unflattened(client):
         return_value=httpx.Response(200, json={"data": [LIVE_ROW]})
     )
     assert client.models.list()[0]["tileward"]["context_len"] == 65536
+
+
+@respx.mock
+def test_an_api_key_provider_is_asked_once_and_its_key_reused():
+    from tileward.client import Tileward
+
+    asked = []
+
+    def provide():
+        asked.append(True)
+        return "tw_live_provided"
+
+    route = respx.get("https://api.test/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    tw = Tileward(base_url="https://api.test", load_config=False, api_key_provider=provide)
+    tw.models.list()
+    tw.models.list()
+    assert asked == [True]
+    assert route.calls[1].request.headers["authorization"] == "Bearer tw_live_provided"
