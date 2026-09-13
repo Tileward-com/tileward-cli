@@ -32,9 +32,10 @@ replaces any other character with `-` and cuts an id at 64, without an error, so
 and `run/1` all name one store, and so do two ids that share their first 64 characters. A bare UUID
 is always safe; a long prefix in front of one can push the part that differs past the cut.
 
-The client warns with `ConversationIdWarning` when an id will be changed, once per line of your code
-that sends one; the warning's `conversation` and `stored` say which id and what it became. `twcli`
-prints both. Where the rewrite is intended, silence it:
+The client warns with `ConversationIdWarning` when an id will be changed. Python shows it once per
+calling line; a call handed straight to `asyncio.create_task` or an executor has no line of yours to
+point at, so those share one. The warning's `conversation` and `stored` say which id it was and what
+it became, and `twcli` prints both. Where the rewrite is intended, silence it:
 
 ```python
 import warnings

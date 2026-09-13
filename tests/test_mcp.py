@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from tileward import errors
+from tileward import _mcp, errors
 from tileward._mcp import (
     ContextTransport,
     build_payload,
@@ -85,6 +85,29 @@ def test_padding_is_trimmed_not_rewritten():
         warnings.simplefilter("error")
         assert conversation_headers("  thread-42  ")["X-Tileward-Conversation"] == "thread-42"
     assert canonical_conversation("  run-1  ") == "run-1"
+
+
+@pytest.mark.parametrize("raw", ["run\t1", "run\x011", "run\x7f1"])
+def test_an_id_with_characters_http_does_send_still_warns(raw):
+    with pytest.warns(errors.ConversationIdWarning):
+        conversation_headers(raw)
+
+
+def test_sendable_matches_what_the_http_layer_accepts():
+    import h11
+
+    for code in range(128):
+        value = f"a{chr(code)}b"
+        try:
+            h11.Request(
+                method="POST",
+                target="/",
+                headers=[("Host", "x"), ("X-Tileward-Conversation", value)],
+            )
+            accepted = True
+        except h11.LocalProtocolError:
+            accepted = False
+        assert _mcp._sendable(value) is accepted, repr(value)
 
 
 def test_an_id_that_cannot_be_sent_as_a_header_claims_no_rewrite():

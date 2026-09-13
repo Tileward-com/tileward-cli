@@ -52,9 +52,13 @@ def canonical_conversation(conversation: str) -> str:
     return _CONVERSATION_UNSAFE.sub("-", trimmed)[:CONVERSATION_MAX_LENGTH] or "default"
 
 
+# Characters the HTTP layer (h11, under httpx) refuses inside a header value.
+_HEADER_REFUSED = frozenset('\x00\n\x0b\x0c\r')
+
+
 def _sendable(value: str) -> bool:
     # What httpx can put in a header at all; anything else fails before a request is made.
-    return all(c == "\t" or " " <= c <= "~" for c in value)
+    return value.isascii() and not any(c in _HEADER_REFUSED for c in value)
 
 
 def _caller_stacklevel() -> int:
