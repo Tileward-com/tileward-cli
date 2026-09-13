@@ -198,7 +198,9 @@ def threads(ctx: Ctx) -> None:
     rows = payload.get("threads") if isinstance(payload, dict) else payload
     ctx.out.table(
         rows_from(rows or []),
-        ["conversation", "title", "turns", "tokens", "updated"],
+        ["conv", "title", "turns", "used_tokens", "last_ts"],
+        headers={"conv": "conversation", "used_tokens": "tokens used", "last_ts": "updated"},
+        timestamps=("last_ts",),
         empty="No conversations stored yet.",
     )
 

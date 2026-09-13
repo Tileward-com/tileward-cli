@@ -14,7 +14,7 @@ from ...config import fingerprint
 from ..main import Ctx, common, pass_ctx
 from ..output import rows_from
 
-COLUMNS = ["id", "label", "prefix", "cells", "created", "last_used", "revoked"]
+COLUMNS = ["id", "label", "key_prefix", "cells", "created", "last_used", "revoked"]
 
 
 @click.group("keys")
@@ -34,7 +34,8 @@ def list_keys(ctx: Ctx, include_revoked: bool) -> None:
     ctx.out.table(
         rows_from(rows),
         COLUMNS,
-        headers={"cells": "locked topics"},
+        headers={"key_prefix": "prefix", "cells": "locked topics"},
+        timestamps=("created", "last_used"),
         empty="No keys yet. Mint one with `twcli keys create --label laptop`.",
     )
 

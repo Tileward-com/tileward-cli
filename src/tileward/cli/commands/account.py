@@ -9,6 +9,12 @@ import click
 from ..main import Ctx, common, pass_ctx
 from ..output import rows_from
 
+MICROS_PER_USD = 1_000_000
+
+
+def _usd(micros: object) -> Optional[float]:
+    return micros / MICROS_PER_USD if isinstance(micros, (int, float)) else None
+
 
 @click.group("account")
 def account_group() -> None:
@@ -55,9 +61,14 @@ def usage(ctx: Ctx) -> None:
     payload = ctx.client.account.get()
     rows = payload.get("by_day") or []
     ctx.emit(rows)
+    # A day comes back as `d`, `tok`, and `cost` in micro-dollars. The payload has no per-day
+    # request count, so there is no requests column.
     ctx.out.table(
-        rows_from(rows),
-        ["day", "tokens", "cost_usd", "requests"],
+        [
+            {"day": row.get("d"), "tokens": row.get("tok"), "cost_usd": _usd(row.get("cost"))}
+            for row in rows_from(rows)
+        ],
+        ["day", "tokens", "cost_usd"],
         empty="No usage recorded yet.",
     )
 
@@ -74,7 +85,9 @@ def audit(ctx: Ctx, limit: Optional[int]) -> None:
     ctx.emit(payload)
     ctx.out.table(
         rows_from(rows or []),
-        ["ts", "model", "decision", "key_id", "tokens", "request_id"],
+        ["ts", "model", "outcome", "key_id", "total_tokens", "request_id"],
+        headers={"ts": "time", "total_tokens": "tokens"},
+        timestamps=("ts",),
         empty="No audit rows.",
     )
 
