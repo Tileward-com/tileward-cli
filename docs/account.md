@@ -25,7 +25,7 @@ tw.account.context_savings()
 change, so anything that copies a number out of here into code will eventually be quoting a price
 that is no longer charged. Read them at the time you need them.
 
-The audit trail is metadata only — time, model, decision, key, tokens, request id. It never holds
+The audit trail is metadata only — time, model, outcome, key, tokens, request id. It never holds
 prompt or completion text.
 
 ## Keys

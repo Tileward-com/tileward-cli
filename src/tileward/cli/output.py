@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 from rich.console import Console
@@ -84,6 +85,7 @@ class Out:
         *,
         title: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
+        timestamps: Sequence[str] = (),
         empty: str = "Nothing to show.",
     ) -> None:
         if self.as_json:
@@ -95,7 +97,11 @@ class Out:
         for column in columns:
             table.add_column((headers or {}).get(column, column.replace("_", " ")))
         for row in rows:
-            table.add_row(*[_cell(row.get(column)) for column in columns])
+            values = [
+                local_time(row.get(column)) if column in timestamps else row.get(column)
+                for column in columns
+            ]
+            table.add_row(*[_cell(value) for value in values])
         self.stdout.print(table)
 
     def pairs(self, data: Dict[str, Any], *, title: Optional[str] = None) -> None:
@@ -107,6 +113,20 @@ class Out:
         for key, value in data.items():
             table.add_row(str(key), _cell(value))
         self.stdout.print(table)
+
+
+def local_time(value: Any) -> Any:
+    """Epoch seconds as local `YYYY-MM-DD HH:MM`; anything that is not a number passes through.
+
+    The API sends every timestamp as a float, and `_cell` formats a float as a quantity, which
+    printed a key's creation time as `1,789,002,488.0501`.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    try:
+        return datetime.fromtimestamp(value).strftime("%Y-%m-%d %H:%M")
+    except (OverflowError, OSError, ValueError):
+        return value
 
 
 def _cell(value: Any) -> str:

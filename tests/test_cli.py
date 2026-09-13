@@ -203,3 +203,107 @@ def test_bad_usage_exits_2(isolated_config):
     from tileward.cli.main import main
 
     assert main(["models", "nosuchcommand"]) == 2
+
+
+# The payloads below carry the field names the console endpoints actually return. These tables were
+# first written against guessed names (`prefix`, `day`, `decision`, `updated`), which rendered as
+# columns of dashes — and epoch floats as `1,789,002,488.0501` — while every test here passed.
+
+
+def local_minute(ts):
+    from datetime import datetime
+
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+
+def session_run(args):
+    # Wide enough that rich never wraps a timestamp across two lines.
+    return run(args, env={"TILEWARD_SESSION": "sess", "COLUMNS": "200"})
+
+
+@respx.mock
+def test_keys_list_shows_the_prefix_and_dates_not_epoch_floats(isolated_config):
+    created, used = 1789002488.0500658, 1789004659.1518748
+    respx.get("https://console.test/api/account").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "keys": [
+                    {"id": 7, "label": "laptop", "key_prefix": "tw_live_ab12cd", "cells": [],
+                     "allow": [], "created": created, "last_used": used, "revoked": False,
+                     "deleted_ts": None},
+                    {"id": 8, "label": "ci", "key_prefix": "tw_live_ef34ab", "cells": ["billing"],
+                     "allow": [], "created": created, "last_used": None, "revoked": False,
+                     "deleted_ts": None},
+                ]
+            },
+        )
+    )
+    result = session_run(["keys", "list"])
+    assert result.exit_code == 0
+    assert "tw_live_ab12cd" in result.output
+    assert local_minute(created) in result.output
+    assert local_minute(used) in result.output
+    assert "1,789," not in result.output
+
+
+@respx.mock
+def test_account_usage_reads_by_day_and_prints_dollars_not_micros(isolated_config):
+    respx.get("https://console.test/api/account").mock(
+        return_value=httpx.Response(
+            200, json={"by_day": [{"d": "2026-09-12", "tok": 1260642, "cost": 1191792.0}]}
+        )
+    )
+    result = session_run(["account", "usage"])
+    assert result.exit_code == 0
+    assert "2026-09-12" in result.output
+    assert "1,260,642" in result.output
+    assert "1.1918" in result.output
+    assert "—" not in result.output
+
+
+@respx.mock
+def test_account_audit_shows_the_outcome_and_total_tokens(isolated_config):
+    ts = 1789245490.0385704
+    respx.get("https://console.test/api/account/audit").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "summary": [],
+                "total": 1,
+                "shown_max": 50,
+                "rows": [
+                    {"ts": ts, "model": "tileward-35b-a3b", "outcome": "allowed", "key_id": 7,
+                     "total_tokens": 3444, "request_id": "req_1"},
+                ],
+            },
+        )
+    )
+    result = session_run(["account", "audit"])
+    assert result.exit_code == 0
+    assert "allowed" in result.output
+    assert "3,444" in result.output
+    assert local_minute(ts) in result.output
+
+
+@respx.mock
+def test_context_threads_shows_the_conversation_tokens_and_last_activity(isolated_config):
+    last = 1789248288.580418
+    respx.get("https://console.test/api/context/threads").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "threads": [
+                    {"conv": "thread-99", "title": "Pricing review", "turns": 10,
+                     "used_tokens": 3444, "saved_tokens": 238, "first_ts": last - 7000,
+                     "last_ts": last},
+                ],
+            },
+        )
+    )
+    result = session_run(["context", "threads"])
+    assert result.exit_code == 0
+    assert "thread-99" in result.output
+    assert "3,444" in result.output
+    assert local_minute(last) in result.output
