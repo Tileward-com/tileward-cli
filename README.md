@@ -114,6 +114,7 @@ twcli docs ls|add|rm|search             your own files
 twcli keys list|create|rotate|revoke    mint and retire API keys
 twcli account show|usage|audit|savings  balance, plan, and history
 twcli config show|set|set-key|profiles  stored settings
+twcli launch claude|codex|opencode      open a coding agent CLI on a Tileward-served model
 ```
 
 Some things it is built to do:

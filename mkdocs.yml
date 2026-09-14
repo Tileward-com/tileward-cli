@@ -64,4 +64,5 @@ nav:
       - cli.md
       - configuration.md
       - hosts.md
+      - launch.md
       - The device flow: device-auth.md

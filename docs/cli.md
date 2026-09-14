@@ -51,6 +51,9 @@ twcli context recall --help
 | `twcli config set-key` | store an API key, prompted rather than typed |
 | `twcli config profiles` | every profile this machine knows about |
 | `twcli config path` | where the config and credentials files live |
+| `twcli launch claude` | open Claude Code against a Tileward-served model |
+| `twcli launch codex` | open Codex against a Tileward-served model |
+| `twcli launch opencode` | open opencode against a Tileward-served model |
 
 <!-- command-index:end -->
 
