@@ -8,7 +8,12 @@ generation reads only the older name.
 from __future__ import annotations
 
 import json as _json
+import os
+import re
+import sys
+import warnings
 from collections.abc import Mapping
+from types import FrameType
 from typing import Any, Callable, Dict, Optional
 
 import httpx
@@ -33,12 +38,49 @@ def build_payload(tool: str, arguments: Mapping[str, Any], request_id: int = 1) 
     }
 
 
+# The server's rule for a conversation header, applied without an error: surrounding whitespace is
+# dropped, any other character becomes "-", and the id is cut at 64, so ids that map to the same
+# name share one store.
+_CONVERSATION_UNSAFE = re.compile(r"[^a-zA-Z0-9._-]")
+CONVERSATION_MAX_LENGTH = 64
+_PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__)) + os.sep
+
+
+def canonical_conversation(conversation: str) -> str:
+    """The id Context stores `conversation` under."""
+    trimmed = conversation.strip()
+    return _CONVERSATION_UNSAFE.sub("-", trimmed)[:CONVERSATION_MAX_LENGTH] or "default"
+
+
+# Characters the HTTP layer (h11, under httpx) refuses inside a header value.
+_HEADER_REFUSED = frozenset('\x00\n\x0b\x0c\r')
+
+
+def _sendable(value: str) -> bool:
+    # What httpx can put in a header at all; anything else fails before a request is made.
+    return value.isascii() and not any(c in _HEADER_REFUSED for c in value)
+
+
+def _caller_stacklevel() -> int:
+    # The first frame outside this package, so a warning names the caller's own line. The depth
+    # differs between the sync, async and chat paths, so no fixed stacklevel does.
+    frame: Optional[FrameType] = sys._getframe(1)
+    level = 1
+    while frame is not None and os.path.abspath(frame.f_code.co_filename).startswith(_PACKAGE_DIR):
+        frame = frame.f_back
+        level += 1
+    return level
+
+
 def conversation_headers(conversation: Optional[str]) -> Dict[str, str]:
     if not conversation:
         return {}
     value = str(conversation).strip()
     if not value:
         return {}
+    stored = canonical_conversation(value)
+    if stored != value and _sendable(value):
+        warnings.warn(errors.ConversationIdWarning(value, stored), stacklevel=_caller_stacklevel())
     return {"X-Tileward-Conversation": value, "X-Twinkle-Conversation": value}
 
 

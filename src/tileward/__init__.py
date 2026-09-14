@@ -28,6 +28,7 @@ from .errors import (
     AuthenticationError,
     ConfigError,
     ConnectionError_,
+    ConversationIdWarning,
     GuardRefusal,
     InsufficientBalanceError,
     NotFoundError,
@@ -50,6 +51,7 @@ __all__ = [
     "RateLimitError",
     "ServerError",
     "ConnectionError_",
+    "ConversationIdWarning",
     "GuardRefusal",
     "__version__",
 ]

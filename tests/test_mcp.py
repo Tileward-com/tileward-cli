@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 import json
+import os
+import warnings
 
 import httpx
 import pytest
 import respx
 
-from tileward import errors
-from tileward._mcp import ContextTransport, build_payload, conversation_headers, parse_body, unwrap
+from tileward import _mcp, errors
+from tileward._mcp import (
+    ContextTransport,
+    build_payload,
+    canonical_conversation,
+    conversation_headers,
+    parse_body,
+    unwrap,
+)
 
 
 def tool_result(value):
@@ -37,6 +46,93 @@ def test_conversation_is_sent_under_both_spellings():
 def test_no_conversation_sends_no_header():
     assert conversation_headers(None) == {}
     assert conversation_headers("  ") == {}
+
+
+@pytest.mark.parametrize(
+    "raw, stored",
+    [
+        ("run 1", "run-1"),
+        ("run:1", "run-1"),
+        ("run/1", "run-1"),
+        ("u2:secrets", "u2-secrets"),
+        ("p" * 65, "p" * 64),
+        ("///", "---"),
+    ],
+)
+def test_the_canonical_id_follows_the_server_rule(raw, stored):
+    assert canonical_conversation(raw) == stored
+
+
+def test_an_id_the_server_would_change_warns_at_the_callers_line_and_is_sent_as_given():
+    with pytest.warns(errors.ConversationIdWarning) as caught:
+        headers = conversation_headers("run 1")
+    warning = caught[0]
+    assert (warning.message.conversation, warning.message.stored) == ("run 1", "run-1")
+    assert os.path.abspath(warning.filename) == os.path.abspath(__file__)
+    assert headers["X-Tileward-Conversation"] == headers["X-Twinkle-Conversation"] == "run 1"
+
+
+def test_a_well_formed_id_does_not_warn():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        conversation_headers("thread-42")
+        conversation_headers("0b7e1c2a-5d1f-4a8e-9c3b-1f2e3d4c5b6a")
+        conversation_headers("a" * 64)
+
+
+def test_padding_is_trimmed_not_rewritten():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert conversation_headers("  thread-42  ")["X-Tileward-Conversation"] == "thread-42"
+    assert canonical_conversation("  run-1  ") == "run-1"
+
+
+@pytest.mark.parametrize("raw", ["run\t1", "run\x011", "run\x7f1"])
+def test_an_id_with_characters_http_does_send_still_warns(raw):
+    with pytest.warns(errors.ConversationIdWarning):
+        conversation_headers(raw)
+
+
+def test_sendable_matches_what_the_http_layer_accepts():
+    import h11
+
+    for code in range(128):
+        value = f"a{chr(code)}b"
+        try:
+            h11.Request(
+                method="POST",
+                target="/",
+                headers=[("Host", "x"), ("X-Tileward-Conversation", value)],
+            )
+            accepted = True
+        except h11.LocalProtocolError:
+            accepted = False
+        assert _mcp._sendable(value) is accepted, repr(value)
+
+
+def test_an_id_that_cannot_be_sent_as_a_header_claims_no_rewrite():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        conversation_headers("café")
+        conversation_headers("run\n1")
+
+
+def test_many_distinct_ids_warn_once_per_calling_line():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("default")
+        for i in range(50):
+            conversation_headers(f"user:{i}")
+    assert len(caught) == 1
+
+
+@respx.mock
+def test_the_warning_names_the_callers_line_through_the_client(client):
+    respx.post("https://context.test").mock(
+        return_value=httpx.Response(200, json=tool_result({"turns": 0}))
+    )
+    with pytest.warns(errors.ConversationIdWarning) as caught:
+        client.context.stats(conversation="run 1")
+    assert os.path.abspath(caught[0].filename) == os.path.abspath(__file__)
 
 
 def test_parses_a_plain_json_body():
