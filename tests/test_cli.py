@@ -570,7 +570,7 @@ def test_account_savings_prints_tables_not_the_raw_payload(isolated_config):
         {"label": "2026-07-01", "ts": now - 60 * 86400, "tokens": 111},
         {"label": "2026-09-12", "ts": now - 86400, "tokens": 4046561},
     ]})
-    result = session_run(["account", "savings"])
+    result = session_run(["account", "savings", "--detail"])
     assert result.exit_code == 0
     assert "84.2%" in result.output
     assert "Release checklist" in result.output
@@ -605,3 +605,112 @@ def test_account_savings_warns_when_the_snapshot_is_stale(isolated_config):
     serve_savings(savings_payload(stale=True, snapshot_age_hours=30.0))
     result = session_run(["account", "savings"])
     assert "30.0 hours old" in result.output
+
+
+@respx.mock
+def test_account_savings_shows_only_the_summary_by_default(isolated_config):
+    daily = serve_savings(savings_payload())
+    result = session_run(["account", "savings"])
+    assert result.exit_code == 0
+    assert "84.2%" in result.output
+    assert "by conversation" not in result.output
+    assert not daily.called
+
+
+@respx.mock
+def test_account_savings_conversation_flag_adds_only_that_table(isolated_config):
+    daily = serve_savings(savings_payload())
+    result = session_run(["account", "savings", "--conversation"])
+    assert "Release checklist" in result.output
+    assert "by day" not in result.output
+    assert not daily.called
+
+
+@respx.mock
+def test_account_savings_asks_for_a_window_by_the_name_the_api_uses(isolated_config):
+    route = respx.get("https://console.test/api/account/twinkle-savings").mock(
+        return_value=httpx.Response(200, json=savings_payload(window="24h", window_hours=24))
+    )
+    result = session_run(["account", "savings", "1d"])
+    assert result.exit_code == 0
+    assert route.calls[0].request.url.params["window"] == "24h"
+
+
+@respx.mock
+def test_account_savings_refuses_a_window_the_api_replaced(isolated_config):
+    # Asked for five weeks, the API answers with its 30-day default.
+    serve_savings(savings_payload())
+    result = session_run(["account", "savings", "5w"])
+    assert result.exit_code == 2
+    assert "did not measure a 5w window; it answered for 30d" in result.output
+
+
+@respx.mock
+def test_account_savings_rejects_a_window_it_cannot_read(isolated_config):
+    result = session_run(["account", "savings", "fortnight"])
+    assert result.exit_code == 2
+    assert "number and a unit" in result.output
+
+
+def signed_in_without_a_key():
+    return {"TILEWARD_API_KEY": None, "TILEWARD_SESSION": "sess"}
+
+
+def serve_key(key="tw_live_minted"):
+    return respx.post("https://console.test/api/account/keys").mock(
+        return_value=httpx.Response(200, json={"ok": True, "id": 91, "key": key})
+    )
+
+
+@respx.mock
+def test_a_signed_in_profile_gets_an_api_key_the_first_time_one_is_needed(isolated_config):
+    minted = serve_key()
+    serve_models()
+    route = respx.post(CHAT).mock(return_value=answer("Hello."))
+    result = run(["chat", "hi", "--no-stream", "-m", "x"], env=signed_in_without_a_key())
+    assert result.exit_code == 0
+    assert "Hello." in result.output
+    assert minted.call_count == 1
+    assert json.loads(minted.calls[0].request.content)["label"].startswith("twcli")
+    assert route.calls[0].request.headers["authorization"] == "Bearer tw_live_minted"
+    stored = json.loads((isolated_config / "credentials.json").read_text())
+    assert stored["profiles"]["default"]["api_key"] == "tw_live_minted"
+
+
+@respx.mock
+def test_context_and_chat_share_the_one_key_created(isolated_config):
+    minted = serve_key()
+    serve_models()
+    respx.post("https://context.test").mock(
+        return_value=httpx.Response(200, json=tool_result({"text": "earlier"}))
+    )
+    respx.post(CHAT).mock(return_value=answer("Hello."))
+    result = run(
+        ["-c", "t1", "chat", "hi", "--no-stream", "-m", "x", "--remember"],
+        env=signed_in_without_a_key(),
+    )
+    assert result.exit_code == 0
+    assert minted.call_count == 1
+
+
+@respx.mock
+def test_without_a_session_a_missing_api_key_is_still_an_error(isolated_config, monkeypatch):
+    monkeypatch.setenv("TILEWARD_BASE_URL", "https://api.test")
+    from tileward.cli.main import main
+
+    assert main(["models", "list"]) == 3
+
+
+@respx.mock
+def test_a_key_that_cannot_be_created_says_how_to_store_one(isolated_config, monkeypatch, capsys):
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("TILEWARD_BASE_URL", "https://api.test")
+    monkeypatch.setenv("TILEWARD_CONSOLE_URL", "https://console.test")
+    monkeypatch.setenv("TILEWARD_SESSION", "sess")
+    respx.post("https://console.test/api/account/keys").mock(
+        return_value=httpx.Response(403, json={"error": {"message": "key limit reached"}})
+    )
+    from tileward.cli.main import main
+
+    assert main(["models", "list"]) == 3
+    assert "twcli config set-key" in capsys.readouterr().err

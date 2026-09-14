@@ -9,12 +9,16 @@ Two credentials, and they are not interchangeable.
 
 Key management authenticates on a signed session, not on a bearer key. A key that could mint keys
 would survive its own revocation — revoke it, and whoever had it just mints another. So a fresh
-install does two things in order:
+install signs in, and the first command that needs a key creates one for this machine through the
+session, labelled `twcli on <hostname>`, and saves it to the profile:
 
 ```bash
 twcli auth login                          # get a session
-twcli keys create --label laptop --save   # mint a key
+twcli chat "hello"                        # creates and saves this machine's key, then answers
 ```
+
+To choose the label, or lock a key to topics, mint it yourself with
+`twcli keys create --label laptop --save`.
 
 ## Which one a call needs
 

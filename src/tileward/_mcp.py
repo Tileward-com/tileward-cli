@@ -14,7 +14,7 @@ import sys
 import warnings
 from collections.abc import Mapping
 from types import FrameType
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import httpx
 
@@ -171,6 +171,7 @@ class ContextTransport:
     ) -> None:
         self.url = url.rstrip("/")
         self.api_key = api_key
+        self.api_key_provider: Optional[Callable[[], Optional[str]]] = None
         self.timeout = timeout
         self.user_agent = user_agent
         self._client = client
@@ -189,6 +190,8 @@ class ContextTransport:
             self._client = None
 
     def _headers(self, conversation: Optional[str]) -> Dict[str, str]:
+        if not self.api_key and self.api_key_provider is not None:
+            self.api_key = self.api_key_provider()
         if not self.api_key:
             raise errors.ConfigError(
                 "Tileward Context needs an API key. Set TILEWARD_API_KEY or pass api_key=..."

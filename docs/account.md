@@ -10,7 +10,7 @@ authenticates with a **console session**, not an API key. Run `twcli auth login`
 twcli account show       # balance, plan, entitlements
 twcli account usage      # day-by-day tokens
 twcli account audit      # request history
-twcli account savings    # what Context has saved on this account
+twcli account savings    # what Context saved in the last 30 days
 ```
 
 ```python
@@ -27,6 +27,11 @@ that is no longer charged. Read them at the time you need them.
 
 The audit trail is metadata only — time, model, outcome, key, tokens, request id. It never holds
 prompt or completion text.
+
+`twcli account savings` takes a window as a whole number and a unit (`h`, `d`, `w`, `m` or `y`), or
+`all`: `twcli account savings 5w`. A month is 30 days and a year 365. If the API measures a
+different window from the one asked for, the command says so instead of showing it.
+`--conversation` adds savings by conversation, and `--detail` adds them by conversation and by day.
 
 ## Keys
 

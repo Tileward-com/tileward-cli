@@ -6,6 +6,7 @@ Exit codes: 0 fine, 1 error, 2 bad usage, 3 not signed in, 4 refused by governan
 
 from __future__ import annotations
 
+import socket
 import sys
 import warnings
 from typing import Any, Optional
@@ -23,6 +24,15 @@ EXIT_ERROR = 1
 EXIT_AUTH = 3
 EXIT_REFUSED = 4
 EXIT_BALANCE = 5
+
+
+def machine_label() -> str:
+    """How this machine is named where a person has to recognise it: an approval screen, a key."""
+    try:
+        host = socket.gethostname()
+    except OSError:
+        host = ""
+    return f"twcli on {host}" if host else "twcli"
 
 
 class Ctx:
@@ -70,11 +80,41 @@ class Ctx:
                 "conversation": self.conversation,
                 "model": self.model,
                 "user_agent_suffix": "twcli",
+                "api_key_provider": self._key_for_this_machine,
             }
             if self.timeout:
                 kwargs["timeout"] = self.timeout
             self._client = Tileward(**kwargs)
         return self._client
+
+    def _key_for_this_machine(self) -> Optional[str]:
+        """An API key for a signed-in profile that has none: created, saved to the profile, used.
+
+        Being signed in is enough for every command. The session can already create keys, so a
+        stored one reaches nothing the credentials file could not reach before.
+        """
+        client = self._client
+        if client is None or not client.has_session:
+            return None
+        label = machine_label()
+        try:
+            created = client.keys.create(label)
+        except errors.AuthenticationError:
+            raise
+        except errors.APIError as exc:
+            raise errors.ConfigError(
+                f"No API key, and creating one for this machine failed: {exc}. "
+                "Store one with `twcli config set-key`."
+            ) from exc
+        secret = created.get("key") if isinstance(created, dict) else None
+        if not secret:
+            return None
+        self.config.set_credentials(api_key=secret)
+        self.out.note(
+            f"Created API key {created.get('id')} ({label}) for this machine and saved it to "
+            f"profile {self.config.profile}."
+        )
+        return str(secret)
 
     def emit(self, payload: Any) -> None:
         """Print JSON if asked. Commands call this and then their human rendering."""

@@ -19,11 +19,11 @@ The whole exchange is with the console host, `app.tileward.com`, which is where 
 
 Key management authenticates on a signed session, not on a bearer key. That is deliberate: a key
 that could mint keys would survive its own revocation — revoke it, and whoever had it just mints
-another. So the first thing a fresh install does is get a session, and the second is mint a key:
+another. So the first thing a fresh install does is get a session. The first command that needs a
+key then mints one for this machine through that session and saves it:
 
 ```bash
 twcli auth login
-twcli keys create --label laptop --save
 ```
 
 ## Why a device flow and not something simpler
