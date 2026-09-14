@@ -375,3 +375,11 @@ def test_error_body_maps_status_to_anthropic_error_type(exc, status, etype):
     assert body["type"] == "error"
     assert body["error"]["type"] == etype
     assert body["error"]["message"] == str(exc.message)
+
+
+def test_stream_error_event_matches_anthropics_documented_shape():
+    piece = anthropic.stream_error_event(errors.ServerError("upstream down", status=502))
+    event_line, data_line = piece.decode("utf-8").strip("\n").split("\n", 1)
+    assert event_line == "event: error"
+    data = json.loads(data_line[len("data: ") :])
+    assert data == {"type": "error", "error": {"type": "api_error", "message": "upstream down"}}

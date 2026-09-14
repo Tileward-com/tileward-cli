@@ -174,6 +174,41 @@ def test_upstream_401_becomes_a_proper_status_before_any_bytes_are_sent():
         proxy.stop()
 
 
+def test_mid_stream_failure_sends_an_error_event_instead_of_a_silent_hang():
+    """A network failure partway through a stream (timeout, connection reset) used to propagate
+    unhandled out of the proxy, dropping the connection with no signal -- indistinguishable from
+    a hang on the client side. It should send the protocol's own error event instead."""
+
+    def failing_iter():
+        yield b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'
+        raise httpx.ReadError("connection reset")
+
+    def handler(request):
+        return httpx.Response(
+            200, content=failing_iter(), headers={"content-type": "text/event-stream"}
+        )
+
+    proxy, _calls = start_anthropic_proxy(handler)
+    try:
+        with httpx.stream(
+            "POST",
+            f"{proxy.base_url}/v1/messages",
+            headers={"Authorization": f"Bearer {proxy.token}"},
+            json={
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 16,
+                "stream": True,
+            },
+        ) as r:
+            assert r.status_code == 200
+            text = b"".join(r.iter_bytes()).decode("utf-8", errors="replace")
+        assert '"text": "Hi"' in text  # the content that did arrive is not lost
+        assert "event: error" in text
+        assert "connection reset" in text
+    finally:
+        proxy.stop()
+
+
 def test_streaming_forwards_sse_with_the_right_content_type():
     sse_body = (
         b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'
@@ -229,6 +264,32 @@ def test_responses_proxy_non_streaming_round_trip():
         assert body["object"] == "response"
         assert body["status"] == "completed"
         assert body["output"][0]["content"][0]["text"] == "Hi!"
+    finally:
+        proxy.stop()
+
+
+def test_responses_proxy_mid_stream_failure_sends_a_response_failed_event():
+    def failing_iter():
+        yield b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'
+        raise httpx.ReadError("connection reset")
+
+    def handler(request):
+        return httpx.Response(
+            200, content=failing_iter(), headers={"content-type": "text/event-stream"}
+        )
+
+    proxy, _calls = start_responses_proxy(handler)
+    try:
+        with httpx.stream(
+            "POST",
+            f"{proxy.base_url}/v1/responses",
+            headers={"Authorization": f"Bearer {proxy.token}"},
+            json={"input": "hi", "stream": True},
+        ) as r:
+            assert r.status_code == 200
+            text = b"".join(r.iter_bytes()).decode("utf-8", errors="replace")
+        assert "event: response.failed" in text
+        assert "connection reset" in text
     finally:
         proxy.stop()
 

@@ -378,3 +378,10 @@ def error_body(exc: Exception) -> Tuple[int, Dict[str, Any]]:
     message = getattr(exc, "message", None) or str(exc)
     etype = _ERROR_TYPE.get(status, "api_error" if status >= 500 else "invalid_request_error")
     return status, {"type": "error", "error": {"type": etype, "message": message}}
+
+
+def stream_error_event(exc: Exception) -> bytes:
+    """A failure after headers are already sent -- an `event: error`, Anthropic's own documented
+    shape for a mid-stream failure, instead of the connection just dying with no signal."""
+    _, body = error_body(exc)
+    return _sse("error", body)
