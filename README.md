@@ -244,9 +244,9 @@ except errors.APIError as exc:            # exc.status, exc.code, exc.request_id
     ...
 ```
 
-A governed refusal is **not** an HTTP error. It arrives as an ordinary completion with
-`finish_reason: "content_filter"` and zero tokens billed — you are not charged for a refusal —
-which is why `create` passes it through and only `say` raises.
+A governed refusal is **not** an HTTP error, which is why `create` passes it through and only `say`
+raises. It arrives as an ordinary completion with `finish_reason: "content_filter"`; the guard's
+read of the prompt is billed, and nothing is billed for the model, which never ran.
 
 ## Configuration
 

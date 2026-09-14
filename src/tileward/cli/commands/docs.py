@@ -27,7 +27,7 @@ def docs_group() -> None:
 @docs_group.command("ls")
 @click.option("--folder", help="Only this folder.")
 @click.option("--tag", "tags", multiple=True, help="Only documents carrying this tag. Repeatable.")
-@click.option("--query", "-q", help="Filter the listing by title, folder, or tag.")
+@click.option("--query", "-q", help="Filter the listing by title or tag.")
 @click.option("--limit", type=int, help="Cap the number of rows.")
 @click.option("--sort", help="Field to sort on (default: folder).")
 @click.option("--order", type=click.Choice(["asc", "desc"]), help="Sort direction.")
@@ -139,10 +139,11 @@ def rm(ctx: Ctx, source_ids, yes: bool) -> None:
 @common()
 @pass_ctx
 def search(ctx: Ctx, query: str, limit: int, content: bool) -> None:
-    """Find documents.
+    """Filter the document list by title or tag, or search the text with --content.
 
-    By default this filters the LISTING — titles, folders, tags. `--content` recalls against the
-    ingested text instead, which is what answers a question rather than finding a filename.
+    Without --content this does not read what the documents say: it matches QUERY against titles
+    and tags. --content recalls against the ingested text instead, which is what answers a question
+    rather than finding a document.
     """
     if content:
         bundle = ctx.client.context.recall(query, scope="all", max_items=limit)

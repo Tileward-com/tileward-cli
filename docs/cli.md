@@ -35,7 +35,7 @@ twcli context recall --help
 | `twcli docs ls` | list documents on the account |
 | `twcli docs add` | ingest files, or text piped in |
 | `twcli docs rm` | remove documents by source id |
-| `twcli docs search` | find documents, or `--content` to search the text |
+| `twcli docs search` | filter the document list by title or tag, or `--content` to search the text |
 | `twcli keys list` | keys on this account |
 | `twcli keys create` | mint a key — the secret is shown once |
 | `twcli keys rotate` | new secret, same id, same policy, same history |

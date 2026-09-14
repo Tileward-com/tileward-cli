@@ -1,18 +1,23 @@
 """`POST /v1/chat/completions` — OpenAI-shaped, with streaming.
 
-A governed refusal is not an HTTP error: it arrives as a completion with
-`finish_reason: content_filter` and zero tokens billed. `create` passes it through;
+A governed refusal is not an HTTP error: it arrives as a completion with id
+`chatcmpl-governed` and `finish_reason: content_filter`. The guard's read of the prompt is
+billed and reported as `prompt_tokens`; `completion_tokens` is 0. `create` passes it through;
 `say` raises.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
 from typing import Any, Dict, List, Literal, Optional, Union, overload
 
+from .._http import AsyncSSEStream, SSEStream
 from ..errors import GuardRefusal
 
 PATH = "/v1/chat/completions"
+GOVERNED_ID = "chatcmpl-governed"
+SOURCES_HEADER = "x-tileward-sources"
 
 Message = Dict[str, Any]
 MessageInput = Union[str, Iterable[Message]]
@@ -84,11 +89,64 @@ def delta_of(chunk: Dict[str, Any]) -> str:
 
 
 def refusal_of(completion: Dict[str, Any]) -> Optional[str]:
-    """The refusal text if governance blocked this call, else None."""
+    """The refusal text if the call finished with `content_filter`, else None.
+
+    That covers a model that declined as well as the guard; `refused_by_gate` tells them apart.
+    """
     for choice in completion.get("choices") or []:
         if isinstance(choice, dict) and choice.get("finish_reason") == "content_filter":
-            return text_of(completion) or "This request was refused by governance."
+            return text_of(completion) or "This request was refused."
     return None
+
+
+def refused_by_gate(payload: Dict[str, Any]) -> bool:
+    """True when Tileward's guard refused the call before the model ran.
+
+    Takes a completion or any chunk of a streamed one; the gateway gives each of them this id.
+    `finish_reason` alone cannot tell: a model that declines also finishes with `content_filter`.
+    """
+    return payload.get("id") == GOVERNED_ID
+
+
+def sources_of(headers: Mapping[str, str]) -> Optional[List[Dict[str, Any]]]:
+    """`X-Tileward-Sources`: a `{doc, folder}` for each passage the model was given.
+
+    `[]` when the header is absent. None when it is there but unreadable: the gateway caps its
+    length, so a long list can arrive cut off, and None keeps that from passing for "none".
+    """
+    raw = next((value for name, value in headers.items() if name.lower() == SOURCES_HEADER), None)
+    if raw is None:
+        return []
+    try:
+        rows = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        return None
+    return rows
+
+
+class ChatStream(SSEStream):
+    """A streamed completion: iterate it for chunks.
+
+    No chunk carries the `tileward` object a completion has, so what the answer was grounded on
+    arrives as a response header. `sources` and `headers` are ready before the first chunk;
+    reading either sends the request if iterating has not.
+    """
+
+    @property
+    def sources(self) -> Optional[List[Dict[str, Any]]]:
+        """See `sources_of`."""
+        return sources_of(self.headers)
+
+
+class AsyncChatStream(AsyncSSEStream):
+    """The async twin of `ChatStream`. `create` returns it open, so `sources` is ready."""
+
+    @property
+    def sources(self) -> Optional[List[Dict[str, Any]]]:
+        """See `sources_of`."""
+        return sources_of(self.headers)
 
 
 class Completions:
@@ -115,7 +173,7 @@ class Completions:
         *,
         stream: Literal[True],
         **kwargs: Any,
-    ) -> Iterator[Dict[str, Any]]: ...
+    ) -> ChatStream: ...
 
     def create(
         self,
@@ -130,7 +188,7 @@ class Completions:
         timeout: Optional[float] = None,
         headers: Optional[Mapping[str, str]] = None,
         **extra: Any,
-    ) -> Union[Dict[str, Any], Iterator[Dict[str, Any]]]:
+    ) -> Union[Dict[str, Any], ChatStream]:
         resolved = model or self._client.models.default()
         if not resolved:
             from ..errors import ConfigError
@@ -150,8 +208,8 @@ class Completions:
             extra=extra or None,
         )
         if stream:
-            return self._client._transport.stream_sse(
-                "POST", PATH, json=body, headers=headers, timeout=timeout
+            return ChatStream(
+                self._client._transport, "POST", PATH, json=body, headers=headers, timeout=timeout
             )
         return self._client._transport.request(
             "POST", PATH, json=body, headers=headers, timeout=timeout
@@ -201,7 +259,7 @@ class AsyncCompletions:
         *,
         stream: Literal[True],
         **kwargs: Any,
-    ) -> AsyncIterator[Dict[str, Any]]: ...
+    ) -> AsyncChatStream: ...
 
     async def create(
         self,
@@ -216,7 +274,7 @@ class AsyncCompletions:
         timeout: Optional[float] = None,
         headers: Optional[Mapping[str, str]] = None,
         **extra: Any,
-    ) -> Union[Dict[str, Any], AsyncIterator[Dict[str, Any]]]:
+    ) -> Union[Dict[str, Any], AsyncChatStream]:
         resolved = model or await self._client.models.default()
         if not resolved:
             from ..errors import ConfigError
@@ -236,11 +294,13 @@ class AsyncCompletions:
             extra=extra or None,
         )
         if stream:
-            # Not awaited: the async generator is the return value, and awaiting it here would
-            # buffer the whole answer before the caller saw a token.
-            return self._client._transport.stream_sse(
-                "POST", PATH, json=body, headers=headers, timeout=timeout
+            # Opened here, so `sources` is ready when the await returns. Only the headers are
+            # awaited; the answer still arrives as the caller iterates.
+            chunks = AsyncChatStream(
+                self._client._transport, "POST", PATH, json=body, headers=headers, timeout=timeout
             )
+            await chunks.start()
+            return chunks
         return await self._client._transport.request(
             "POST", PATH, json=body, headers=headers, timeout=timeout
         )

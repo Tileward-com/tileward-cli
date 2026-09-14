@@ -62,7 +62,7 @@ class Guard:
         always_block: Optional[Sequence[str]] = None,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """The raw response: `{tokens, cost_micros, result}`."""
+        """The raw response: `{cost_micros, result}`, where `result` is a list if `text` was."""
         body = build_body(text, allow=allow, disallow=disallow, always_block=always_block)
         return self._client._transport.request("POST", PATH, json=body, timeout=timeout)
 

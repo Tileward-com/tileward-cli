@@ -41,7 +41,7 @@ twcli docs search "leave policy"
 twcli docs search "leave policy" --content
 ```
 
-**`search` filters the listing, not the text.** By default it matches titles, folders and tags —
+**`search` filters the listing, not the text.** By default it matches titles and tags —
 it finds a filename. `--content` recalls against the ingested chunks instead, which is what answers
 a question:
 

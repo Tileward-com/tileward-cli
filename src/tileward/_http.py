@@ -9,8 +9,8 @@ from __future__ import annotations
 import json as _json
 import random
 import time
-from collections.abc import AsyncIterator, Iterator, Mapping
-from typing import Any, Callable, Dict, Optional, Union
+from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterator, Mapping
+from typing import Any, Callable, Dict, Optional, TypeVar, Union
 
 import httpx
 
@@ -229,7 +229,10 @@ class Transport(_Base):
             time.sleep(_backoff(attempt, None))
             attempt += 1
 
-    def stream_sse(
+    def stream_sse(self, method: str, path: str, **request: Any) -> SSEStream:
+        return SSEStream(self, method, path, **request)
+
+    def _events(
         self,
         method: str,
         path: str,
@@ -239,7 +242,8 @@ class Transport(_Base):
         auth: AuthMode = "key",
         timeout: Optional[float] = None,
         host: Optional[str] = None,
-    ) -> Iterator[Dict[str, Any]]:
+    ) -> Generator[Any, None, None]:
+        """The open response, then each event."""
         url = self._url(path, auth, host)
         hdrs = self._headers(auth, headers)
         hdrs["Accept"] = "text/event-stream"
@@ -250,6 +254,7 @@ class Transport(_Base):
                 if response.status_code >= 400:
                     response.read()
                     self._raise(response)
+                yield response
                 yield from _iter_sse(response.iter_lines())
         except httpx.HTTPError as exc:
             raise errors.ConnectionError_(f"{method} {url} stream failed: {exc}") from exc
@@ -323,7 +328,10 @@ class AsyncTransport(_Base):
             await asyncio.sleep(_backoff(attempt, None))
             attempt += 1
 
-    async def stream_sse(
+    def stream_sse(self, method: str, path: str, **request: Any) -> AsyncSSEStream:
+        return AsyncSSEStream(self, method, path, **request)
+
+    async def _events(
         self,
         method: str,
         path: str,
@@ -333,7 +341,8 @@ class AsyncTransport(_Base):
         auth: AuthMode = "key",
         timeout: Optional[float] = None,
         host: Optional[str] = None,
-    ) -> AsyncIterator[Dict[str, Any]]:
+    ) -> AsyncGenerator[Any, None]:
+        """The open response, then each event."""
         url = self._url(path, auth, host)
         hdrs = self._headers(auth, headers)
         hdrs["Accept"] = "text/event-stream"
@@ -344,6 +353,7 @@ class AsyncTransport(_Base):
                 if response.status_code >= 400:
                     await response.aread()
                     self._raise(response)
+                yield response
                 async for raw_line in response.aiter_lines():
                     line = raw_line.strip()
                     if not line.startswith("data:"):
@@ -357,6 +367,86 @@ class AsyncTransport(_Base):
                         continue
         except httpx.HTTPError as exc:
             raise errors.ConnectionError_(f"{method} {url} stream failed: {exc}") from exc
+
+
+_S = TypeVar("_S", bound="SSEStream")
+_AS = TypeVar("_AS", bound="AsyncSSEStream")
+
+
+class SSEStream(Iterator[Dict[str, Any]]):
+    """The events of one streamed response, and its headers.
+
+    The request goes out when the first event or `headers` is read, so iterating behaves as a
+    generator would and the headers are there before the first event. `close()` or a `with` block
+    lets go of a stream left unfinished.
+    """
+
+    def __init__(self, transport: Transport, method: str, path: str, **request: Any) -> None:
+        self._run = transport._events(method, path, **request)
+        self._response: Optional[httpx.Response] = None
+        self._started = False
+
+    def _start(self) -> None:
+        if not self._started:
+            self._started = True
+            self._response = next(self._run)
+
+    @property
+    def headers(self) -> httpx.Headers:
+        self._start()
+        if self._response is None:
+            raise errors.TilewardError("This stream did not open, so it has no headers.")
+        return self._response.headers
+
+    def __next__(self) -> Dict[str, Any]:
+        self._start()
+        event: Dict[str, Any] = next(self._run)
+        return event
+
+    def close(self) -> None:
+        self._run.close()
+
+    def __enter__(self: _S) -> _S:
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        self.close()
+
+
+class AsyncSSEStream(AsyncIterator[Dict[str, Any]]):
+    """The async twin of `SSEStream`. Its headers need it open: await `start()`, or iterate."""
+
+    def __init__(self, transport: AsyncTransport, method: str, path: str, **request: Any) -> None:
+        self._run = transport._events(method, path, **request)
+        self._response: Optional[httpx.Response] = None
+        self._started = False
+
+    async def start(self) -> None:
+        """Send the request and wait for the response's headers, not its body."""
+        if not self._started:
+            self._started = True
+            self._response = await self._run.__anext__()
+
+    @property
+    def headers(self) -> httpx.Headers:
+        if self._response is None:
+            raise errors.TilewardError("This stream is not open; await start() or iterate it.")
+        return self._response.headers
+
+    async def __anext__(self) -> Dict[str, Any]:
+        await self.start()
+        event: Dict[str, Any] = await self._run.__anext__()
+        return event
+
+    async def aclose(self) -> None:
+        await self._run.aclose()
+
+    async def __aenter__(self: _AS) -> _AS:
+        await self.start()
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self.aclose()
 
 
 def _clean_params(params: Optional[Mapping[str, Any]]) -> Optional[Dict[str, Any]]:

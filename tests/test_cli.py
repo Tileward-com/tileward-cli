@@ -289,9 +289,7 @@ def test_each_conversation_is_a_thread_of_its_own_on_the_gateway(isolated_config
 @respx.mock
 def test_guard_exit_code_flag_reports_a_refusal(isolated_config):
     respx.post("https://api.test/v1/guard").mock(
-        return_value=httpx.Response(
-            200, json={"tokens": 14, "result": {"allowed": False, "reason": "off_scope"}}
-        )
+        return_value=httpx.Response(200, json={"cost_micros": 3.69, "result": {"allowed": False}})
     )
     assert run(["guard", "check", "x", "--allow", "support", "--exit-code"]).exit_code == 4
 
@@ -299,7 +297,7 @@ def test_guard_exit_code_flag_reports_a_refusal(isolated_config):
 @respx.mock
 def test_guard_without_exit_code_flag_still_succeeds(isolated_config):
     respx.post("https://api.test/v1/guard").mock(
-        return_value=httpx.Response(200, json={"tokens": 14, "result": {"allowed": False}})
+        return_value=httpx.Response(200, json={"cost_micros": 3.69, "result": {"allowed": False}})
     )
     assert run(["guard", "check", "x", "--allow", "support"]).exit_code == 0
 
@@ -307,7 +305,7 @@ def test_guard_without_exit_code_flag_still_succeeds(isolated_config):
 @respx.mock
 def test_guard_sends_the_allow_list_it_was_given(isolated_config):
     route = respx.post("https://api.test/v1/guard").mock(
-        return_value=httpx.Response(200, json={"tokens": 1, "result": {"allowed": True}})
+        return_value=httpx.Response(200, json={"cost_micros": 0.26, "result": {"allowed": True}})
     )
     run(["guard", "check", "x", "--allow", "a, b"])
     assert json.loads(route.calls[0].request.content)["allow"] == ["a", "b"]
@@ -371,6 +369,26 @@ def test_docs_ls_lists_documents(isolated_config):
     )
     result = run(["docs", "ls"])
     assert "Handbook" in result.output
+
+
+@respx.mock
+def test_docs_search_filters_the_list_unless_asked_to_read_the_text(isolated_config):
+    route = respx.post("https://context.test").mock(
+        side_effect=lambda request: httpx.Response(
+            200, json=tool_result({"documents": [], "text": ""})
+        )
+    )
+    run(["docs", "search", "leave"])
+    run(["docs", "search", "leave", "--content"])
+    names = [json.loads(call.request.content)["params"]["name"] for call in route.calls]
+    assert names == ["tileward_list_documents", "tileward_recall"]
+
+
+def test_docs_search_help_says_it_matches_titles_and_tags_not_the_text(isolated_config):
+    listing = " ".join(run(["docs", "--help"]).output.split())
+    detail = " ".join(run(["docs", "search", "--help"]).output.split())
+    assert "Filter the document list" in listing
+    assert "does not read what the documents say" in detail
 
 
 def test_keys_without_a_session_says_to_log_in(isolated_config):
@@ -510,6 +528,16 @@ def test_account_audit_shows_the_outcome_and_total_tokens(isolated_config):
     assert "allowed" in result.output
     assert "3,444" in result.output
     assert local_minute(ts) in result.output
+
+
+@respx.mock
+def test_account_audit_filters_by_key_and_outcome(isolated_config):
+    route = respx.get("https://console.test/api/account/audit").mock(
+        return_value=httpx.Response(200, json={"summary": [], "total": 0, "rows": []})
+    )
+    result = session_run(["account", "audit", "--key-id", "7", "--outcome", "rejected"])
+    assert result.exit_code == 0
+    assert dict(route.calls[0].request.url.params) == {"key_id": "7", "outcome": "rejected"}
 
 
 @respx.mock

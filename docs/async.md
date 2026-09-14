@@ -64,12 +64,14 @@ that returns the stream:
 
 ```python
 stream = await tw.chat.completions.create("...", stream=True)
+stream.sources        # ready once the await returns
 async for chunk in stream:
     ...
 ```
 
-Awaiting the generator instead of iterating it would buffer the whole answer before you saw a
-token.
+The await lasts until the response starts, not until the answer ends: an error such as a 402
+raises there, and the text arrives as you iterate. `sources` and `headers` work as in
+[Tileward Models](models.md#what-an-answer-was-grounded-on).
 
 ## Concurrency
 

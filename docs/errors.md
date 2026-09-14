@@ -15,23 +15,30 @@ except errors.APIError as exc:            # exc.status, exc.code, exc.request_id
 
 ## A refusal is not an error
 
-**A governed refusal arrives as an ordinary completion**, with `finish_reason: "content_filter"`
-and zero tokens billed. You are not charged for a refusal.
+**A governed refusal arrives as an ordinary completion**, with id `chatcmpl-governed` and
+`finish_reason: "content_filter"`. The guard's read of the prompt is billed, and `usage` reports it
+as `prompt_tokens`; `completion_tokens` is `0`, because the model never ran.
 
 `chat.completions.create` passes it through, because that is what the API returned and a caller
 metering responses needs to see it. `chat.say` raises `GuardRefusal`, because it promised text
 back and returning an empty string would hide the reason.
 
-```python
-completion = tw.chat.completions.create("...")
+A model that declines also finishes with `content_filter`, so the finish reason alone does not say
+the guard refused. The id does:
 
-from tileward.resources.chat import refusal_of
-if refusal_of(completion):
-    ...        # refused
+```python
+from tileward.resources.chat import refusal_of, refused_by_gate
+
+completion = tw.chat.completions.create("...")
+if refused_by_gate(completion):
+    ...        # the guard refused; the model never ran
+elif refusal_of(completion):
+    ...        # the model declined
 ```
 
-`GuardRefusal.completion` carries the whole completion, so a handler can read the usage block and
-the refusal text.
+`refused_by_gate` takes a chunk of a stream as well; every chunk of a guard refusal carries the id.
+`GuardRefusal` is raised for both kinds. Its `.completion` carries the whole completion, so a
+handler can read the usage block and the refusal text, and pass it to `refused_by_gate`.
 
 ## The exception tree
 
