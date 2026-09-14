@@ -17,6 +17,7 @@ default.
 | `TILEWARD_PROFILE` | which stored profile to read |
 | `TILEWARD_CONFIG_DIR` | where the files live |
 | `TILEWARD_NO_COLOR` | disable colour (so does `NO_COLOR`) |
+| `TILEWARD_PROXY_TOKEN` | `twcli launch codex`'s local proxy bearer token — set only inside the launched `codex` process, never stored |
 
 ## Files
 

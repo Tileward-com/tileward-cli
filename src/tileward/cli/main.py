@@ -268,9 +268,9 @@ def _warning_printer(out: Out, fallback: Any) -> Any:
 
 
 def _register() -> None:
-    from .commands import account, auth, chat, config, context, docs, guard, keys, models
+    from .commands import account, auth, chat, config, context, docs, guard, keys, launch, models
 
-    for module in (auth, models, chat, guard, context, docs, keys, account, config):
+    for module in (auth, models, chat, guard, context, docs, keys, account, config, launch):
         module.register(cli)
 
 
