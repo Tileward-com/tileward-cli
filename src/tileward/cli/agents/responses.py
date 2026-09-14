@@ -399,3 +399,13 @@ def error_body(exc: Exception) -> Tuple[int, Dict[str, Any]]:
     code = getattr(exc, "code", None)
     etype = "invalid_request_error" if status < 500 else "server_error"
     return status, {"error": {"message": message, "type": etype, "code": code}}
+
+
+def stream_error_event(exc: Exception) -> bytes:
+    """A failure after headers are already sent -- a `response.failed` event instead of the
+    connection just dying with no signal."""
+    _, body = error_body(exc)
+    response = _response_obj(new_id("resp"), "", "failed", [], 0, 0)
+    response["error"] = body["error"]
+    payload = {"type": "response.failed", "sequence_number": 0, "response": response}
+    return f"event: response.failed\ndata: {json.dumps(payload)}\n\n".encode()

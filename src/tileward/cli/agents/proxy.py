@@ -3,13 +3,14 @@
 One per `twcli launch`, bound to `127.0.0.1` only, torn down when the child process exits. The
 child CLI only ever sees a random per-run bearer token, never the real `tw_live_...` key.
 
-An "adapter" is a module with four functions -- `anthropic.py` and `responses.py` both have this
+An "adapter" is a module with five functions -- `anthropic.py` and `responses.py` both have this
 shape, so a third protocol is a third module, not a change here:
 
     to_chat_request(body: dict, *, model: str) -> dict
     from_chat_response(completion: dict, *, model: str) -> dict
     stream_events(chunks: Iterator[dict], *, model: str) -> Iterator[bytes]
     error_body(exc: Exception) -> tuple[int, dict]
+    stream_error_event(exc: Exception) -> bytes  # a mid-stream failure, after headers are sent
     count_tokens(body: dict) -> dict  # optional, routed only if `routes` maps a path to it
 
 Only POST is handled: Codex's background `GET /v1/models` metadata poll expects its own
@@ -141,9 +142,19 @@ def _make_handler(
             self.send_header("Connection", "close")
             self.end_headers()
             self.close_connection = True
-            for piece in adapter.stream_events(rest_of_stream(), model=model):
-                self.wfile.write(piece)
-                self.wfile.flush()
+            try:
+                for piece in adapter.stream_events(rest_of_stream(), model=model):
+                    self.wfile.write(piece)
+                    self.wfile.flush()
+            except errors.TilewardError as exc:
+                # Headers are already sent, so this can't become a status code -- send the
+                # protocol's own mid-stream error event instead of just dropping the connection,
+                # which otherwise looks identical to a silent hang on the client side.
+                try:
+                    self.wfile.write(adapter.stream_error_event(exc))
+                    self.wfile.flush()
+                except OSError:
+                    pass  # the client already hung up; nothing left to write to
 
     return Handler
 

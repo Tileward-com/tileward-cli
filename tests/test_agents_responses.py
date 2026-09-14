@@ -281,3 +281,13 @@ def test_error_body_shape(exc, status):
     got_status, body = responses.error_body(exc)
     assert got_status == status
     assert body["error"]["message"] == exc.message
+
+
+def test_stream_error_event_is_a_response_failed_event():
+    piece = responses.stream_error_event(errors.ServerError("upstream down", status=502))
+    event_line, data_line = piece.decode("utf-8").strip("\n").split("\n", 1)
+    assert event_line == "event: response.failed"
+    data = json.loads(data_line[len("data: ") :])
+    assert data["type"] == "response.failed"
+    assert data["response"]["status"] == "failed"
+    assert data["response"]["error"]["message"] == "upstream down"
