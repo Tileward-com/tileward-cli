@@ -14,10 +14,8 @@ import click
 from ..agents import runner
 from ..main import Ctx, common, pass_ctx
 
-# The standard click recipe for "parse my own options, then forward everything else verbatim":
-# unrecognized flags fall through to the `nargs=-1 UNPROCESSED` argument instead of erroring, and
-# once a positional-looking token is seen, option parsing stops so `-p` meant for the child isn't
-# mistaken for one of ours.
+# Unrecognized flags fall through to `args` instead of erroring, so `-p` meant for the child
+# isn't mistaken for one of ours.
 _PASSTHROUGH = {"ignore_unknown_options": True, "allow_interspersed_args": False}
 
 

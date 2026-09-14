@@ -39,13 +39,9 @@ def provider_block(base_url: str, model_ids: List[str]) -> Dict[str, Any]:
 
 
 def merge(base_url: str, model_ids: List[str]) -> Tuple[Path, bool]:
-    """Merge `provider.tileward` into the user's opencode config.
-
-    Returns `(path, applied)`. `applied` is False when the existing file isn't plain JSON —
-    opencode also accepts JSONC (comments, trailing commas), which the stdlib `json` module
-    rejects — in which case nothing is written; the caller shows the block for the user to paste
-    in by hand rather than risk corrupting a file this function can't fully parse.
-    """
+    """Merge `provider.tileward` into the user's opencode config. Returns `(path, applied)`;
+    `applied` is False when the existing file isn't plain JSON (opencode also allows JSONC),
+    in which case nothing is written rather than risk corrupting it."""
     path = config_path()
     doc: Dict[str, Any] = {"$schema": "https://opencode.ai/config.json"}
     if path.exists():

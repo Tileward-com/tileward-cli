@@ -1,13 +1,8 @@
 """Anthropic Messages API <-> Tileward's OpenAI-compatible chat completions.
 
-Claude Code speaks the Messages format and nothing else. Tileward's own `/v1/messages`
-(fwaa#322) is a governed BYOK passthrough to the customer's own Anthropic key, by explicit
-decision — it never reaches Tileward's own served models. This module is the translation that
-decision left undone, run locally by `twcli launch claude` instead of at the gateway.
-
-The streaming event shapes below (message_start / content_block_start / content_block_delta /
-content_block_stop / message_delta / message_stop) were checked verbatim against Anthropic's own
-streaming docs, including the exact field names on a `tool_use` block and an `input_json_delta`.
+Claude Code speaks the Messages format only, and Tileward's `/v1/messages` is a BYOK passthrough
+to the customer's own Anthropic key, not a path to Tileward's served models -- so `twcli launch
+claude` runs this translation locally. Streaming event shapes are checked against Anthropic's docs.
 """
 
 from __future__ import annotations
@@ -35,18 +30,12 @@ _ERROR_TYPE = {
 
 
 def to_chat_request(body: Dict[str, Any], *, model: str) -> Dict[str, Any]:
-    """A Messages request body -> a chat-completions request body (unsent — no `model` key;
-    the caller supplies that itself, same as every other place in this codebase resolves one).
+    """A Messages request body -> a chat-completions request body (no `model` key; the caller
+    supplies that itself).
 
-    A LEADING SYSTEM MESSAGE IS NOT OPTIONAL DOWNSTREAM. Claude Code's `mid-conversation-system`
-    beta feature can put a `role: "system"` message anywhere in the transcript to revise
-    instructions partway through a long session, but Tileward's backend answers a system message
-    that isn't the very first entry with `400 System message must be at the beginning` (found
-    running a real agentic `-p` session through this proxy, not a synthetic test case). Every
-    system-role message -- the top-level `system` field and any found later in `messages` -- is
-    folded into ONE combined leading message instead: this keeps the instruction content in the
-    request rather than dropping or rejecting it, at the cost of exact position, which the
-    backend leaves no room to preserve anyway.
+    Claude Code's `mid-conversation-system` beta can put a `role: "system"` message anywhere in
+    the transcript, but Tileward 400s on a system message that isn't first -- every one found is
+    folded into a single leading message instead.
     """
     system_parts: List[str] = []
     system = body.get("system")
@@ -134,12 +123,8 @@ def _assistant_message(blocks: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _user_turn_messages(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """One Anthropic user turn -> one or more chat messages.
-
-    A `tool_result` block becomes its own `role: "tool"` message (chat completions allows exactly
-    one tool result per message), so a turn with several pending tool results — or ordinary text
-    mixed in with them — splits into several messages, in the order the blocks arrived.
-    """
+    """One Anthropic user turn -> one or more chat messages: each `tool_result` block becomes
+    its own `role: "tool"` message, since chat completions allows only one per message."""
     out: List[Dict[str, Any]] = []
     text_parts: List[str] = []
 
@@ -232,12 +217,9 @@ def _block_stop(index: int) -> bytes:
 
 
 def stream_events(chunks: Iterator[Dict[str, Any]], *, model: str) -> Iterator[bytes]:
-    """A stream of chat-completions chunks -> the Messages SSE event sequence.
-
+    """A stream of chat-completions chunks -> the Messages SSE event sequence:
     `message_start -> (content_block_start -> content_block_delta* -> content_block_stop)* ->
-    message_delta -> message_stop`, verified event-for-event (including the exact `tool_use`
-    content_block_start shape and `input_json_delta`) against Anthropic's streaming docs.
-    """
+    message_delta -> message_stop`."""
     message_id = new_id("msg")
     started = False
     open_index: Optional[int] = None
@@ -375,12 +357,8 @@ def stream_events(chunks: Iterator[Dict[str, Any]], *, model: str) -> Iterator[b
 
 
 def count_tokens(body: Dict[str, Any]) -> Dict[str, Any]:
-    """`/v1/messages/count_tokens` — an approximation, not a bill.
-
-    Claude Code calls this to keep its local context-usage gauge honest; it is not billed and does
-    not feed Tileward's own metering, which stays authoritative and server-side. ~4 characters per
-    token is the same rough ratio most tokenizer-free estimators use for English text.
-    """
+    """`/v1/messages/count_tokens` -- an approximation for Claude Code's context gauge, not a
+    bill; Tileward's own server-side metering stays authoritative."""
     parts: List[str] = []
     system = body.get("system")
     if system:

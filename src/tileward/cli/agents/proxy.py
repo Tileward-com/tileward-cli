@@ -1,27 +1,19 @@
 """The local HTTP proxy `launch claude` and `launch codex` run.
 
-One per `twcli launch`, bound to `127.0.0.1` only, torn down when the child process exits. It
-holds the real Tileward client; the child CLI only ever sees a random per-run bearer token, never
-the actual `tw_live_...` key (see `runner.py`).
+One per `twcli launch`, bound to `127.0.0.1` only, torn down when the child process exits. The
+child CLI only ever sees a random per-run bearer token, never the real `tw_live_...` key.
 
-An "adapter" is just a module with four functions — `anthropic.py` and `responses.py` both have
-this exact shape, and nothing here imports either by name, so a third protocol is a third module,
-not a change here:
+An "adapter" is a module with four functions -- `anthropic.py` and `responses.py` both have this
+shape, so a third protocol is a third module, not a change here:
 
-    to_chat_request(body: dict, *, model: str) -> dict   # must include "messages"; may include
-                                                          # "stream" (default False), "tools", ...
+    to_chat_request(body: dict, *, model: str) -> dict
     from_chat_response(completion: dict, *, model: str) -> dict
     stream_events(chunks: Iterator[dict], *, model: str) -> Iterator[bytes]
     error_body(exc: Exception) -> tuple[int, dict]
-    count_tokens(body: dict) -> dict                      # optional; routed only if `routes` maps
-                                                          # a path to "count_tokens"
+    count_tokens(body: dict) -> dict  # optional, routed only if `routes` maps a path to it
 
-Codex polls `GET /v1/models` for model metadata in the background; this proxy only speaks `POST`
-(the stdlib's default 501 answers a GET the same as any other unmapped method), and that's
-deliberate -- Codex's models-manager expects its own undocumented `{"models": [...]}` schema, not
-Tileward's real `/v1/models` shape, and answering with the wrong shape produced a noisier decode
-error than the plain 501 it started as. The warning it logs ("Model metadata ... not found") is
-cosmetic: Codex falls back to generic assumptions and the session runs correctly either way.
+Only POST is handled: Codex's background `GET /v1/models` metadata poll expects its own
+undocumented schema, not Tileward's, and gets a plain 501 rather than a wrong-shaped response.
 """
 
 from __future__ import annotations
@@ -63,10 +55,8 @@ def _make_handler(
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
-            # Always close rather than keep-alive. A single-purpose loopback proxy has nothing to
-            # gain from connection reuse, and a client that pipelines a retry immediately behind a
-            # non-2xx response is exactly the case where keep-alive parsing has the least margin
-            # for error -- one byte-accounting mismatch turns the next request line into garbage.
+            # Keep-alive parsing broke under a client that pipelines a retry right behind a
+            # non-2xx response; always closing sidesteps it, and a loopback proxy loses nothing.
             self.send_header("Connection", "close")
             self.end_headers()
             self.close_connection = True
@@ -127,10 +117,8 @@ def _make_handler(
             chunks = client.chat.completions.create(
                 messages, model=model, stream=True, stream_options={"include_usage": True}, **rest
             )
-            # `chunks` is a lazy generator: nothing has happened on the wire yet. Force the first
-            # item BEFORE committing to a 200 + SSE response, so an upstream failure (bad key, the
-            # model 404ing, a guard refusal that raises) still comes back as a proper status code
-            # instead of a stream that opens then silently dies.
+            # `chunks` is a lazy generator; force the first item before committing to 200 + SSE,
+            # so an upstream failure comes back as a real status code instead of a dead stream.
             try:
                 first = next(chunks)
             except errors.TilewardError as exc:
@@ -145,10 +133,8 @@ def _make_handler(
                 yield first
                 yield from chunks
 
-            # No Content-Length (the length isn't known up front) and no chunked encoding, so
-            # under HTTP/1.1 keep-alive the client has no way to know the body ended short of a
-            # closed connection -- it would otherwise block on the next read forever. `close`
-            # is honest about that instead of pretending this connection can be reused.
+            # No Content-Length up front, so the client can't tell the body ended without a
+            # closed connection -- it would otherwise block on the next read forever.
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
