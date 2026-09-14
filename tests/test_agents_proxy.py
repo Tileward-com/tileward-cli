@@ -1,15 +1,7 @@
 """The real `ThreadingHTTPServer`, driven with `httpx`, against a mocked Tileward backend.
 
-Unlike test_agents_anthropic.py / test_agents_responses.py (pure functions, no I/O), this exists
-to prove the pieces those tests check in isolation actually compose over a real socket: auth-token
-enforcement, the error-status-before-headers-sent streaming trick, and that a translated response
-comes back with the right Content-Type.
-
-The outbound leg is mocked with `httpx.MockTransport`, scoped to the one `httpx.Client` the
-Tileward client uses -- not `respx`'s global monkeypatch, which turned out to intercept (and
-corrupt) this file's own direct calls to the local proxy on `127.0.0.1` as well as the proxy's
-own outbound call, since both share the same process.
-"""
+The outbound leg is mocked with `httpx.MockTransport` (not `respx`'s global monkeypatch, which
+intercepts this file's own calls to the local proxy too)."""
 
 from __future__ import annotations
 
@@ -106,10 +98,8 @@ def test_unknown_path_is_404():
 
 
 def test_get_is_a_plain_501_not_a_crash():
-    """Codex polls GET /v1/models for metadata in the background; this proxy only speaks POST
-    (see proxy.py's module docstring for why answering it was tried and reverted). The stdlib's
-    own default handling for an unmapped method must still hold -- a GET should 501 cleanly, not
-    take the connection down."""
+    """This proxy only speaks POST; an unmapped GET should 501 cleanly, not take the connection
+    down (see proxy.py's module docstring)."""
     proxy, _calls = start_anthropic_proxy(never_called)
     try:
         r = httpx.get(f"{proxy.base_url}/v1/models")
@@ -244,10 +234,8 @@ def test_responses_proxy_non_streaming_round_trip():
 
 
 def test_malformed_request_body_does_not_crash_the_proxy():
-    """An unparsable body decodes to `{}` (see `proxy._read_json`) -- a valid, if empty, Messages
-    request -- so translation and the outbound call both proceed instead of the connection just
-    dying, which is what a crash inside `do_POST` would otherwise look like from the client side.
-    """
+    """An unparsable body decodes to `{}`, a valid empty Messages request, rather than crashing
+    `do_POST`."""
 
     def handler(request):
         return httpx.Response(

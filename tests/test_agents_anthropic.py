@@ -293,13 +293,8 @@ def test_stream_events_text_only_reconstructs_full_text_and_ordering():
 
 
 def _tool_call_chunk(index, *, id=None, name=None, arguments=None, finish_reason=None):
-    """One chat-completions streaming chunk carrying a single `tool_calls` delta entry.
-
-    A helper rather than inline literals: the real shape nests five levels deep
-    (choices -> delta -> tool_calls -> function -> arguments), and hand-counting braces at that
-    depth is exactly the kind of thing that silently produces a syntactically valid but wrong
-    literal instead of a clear error.
-    """
+    """One chat-completions streaming chunk carrying a single `tool_calls` delta entry --
+    avoids hand-counting braces five levels deep in inline literals."""
     function = {}
     if name is not None:
         function["name"] = name

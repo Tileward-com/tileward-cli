@@ -1,23 +1,10 @@
 """OpenAI Responses API <-> Tileward's OpenAI-compatible chat completions.
 
-Codex CLI dropped chat-completions support in Codex 0.122 (Feb 2026, upstream) and speaks only
-the Responses API now. Tileward has no `/v1/responses` route at all — not even the BYOK
-passthrough Claude Code gets — so `twcli launch codex` runs the same kind of local translation as
-`launch claude` (see `anthropic.py`), against the practical subset of the Responses surface an
-agentic coding CLI actually exercises: text output, function calls, and their results. Codex
-resends its full `input` on every turn (confirmed via the config docs' description of custom
-providers), so this proxy is deliberately stateless — `store` and `previous_response_id` are
-accepted and ignored, the same choice LiteLLM's own chat<->responses translation makes.
-
-CONFIDENCE NOTE: the streaming event *names* below are confirmed against the OpenAI Python SDK's
-event type listing for the subset this uses (`response.created`, `response.output_item.added`/
-`.done`, `response.function_call_arguments.delta`/`.done`, `response.completed`). The exact
-`response.output_text.delta`/`.done` literal and the `event:`-line-per-type SSE framing could not
-be verified against a live doc fetch in the environment this was built in (blocked / ambiguous
-sources) — implemented from strong prior knowledge, and flagged here as the one spot to double
-check once real Codex traffic is available (the local `codex` install in that environment was
-itself broken, so it couldn't be checked end-to-end either). If wrong, this is a one-function fix
-in `stream_events` below; `from_chat_response` (the non-streaming path) carries no such risk.
+Codex dropped chat-completions support in 0.122 and speaks only Responses now; Tileward has no
+`/v1/responses` route at all, so `twcli launch codex` runs the same kind of local translation as
+`launch claude` (see `anthropic.py`), against the subset an agentic coding CLI actually exercises:
+text output, function calls, and their results. Stateless by design -- `store` and
+`previous_response_id` are accepted and ignored, since Codex resends full `input` every turn.
 """
 
 from __future__ import annotations
@@ -29,11 +16,9 @@ from ._util import new_id, text_from_blocks
 
 
 def to_chat_request(body: Dict[str, Any], *, model: str) -> Dict[str, Any]:
-    """See the identical note in anthropic.py's `to_chat_request`: Tileward's backend 400s on a
-    system message that isn't the first entry, so every system-role item -- `instructions` and
-    any `role: "system"` message item -- is folded into one combined leading message rather than
-    left at its original position.
-    """
+    """Same fix as anthropic.py's `to_chat_request`: every system-role item -- `instructions`
+    and any `role: "system"` message item -- is folded into one leading message, since Tileward
+    400s on a system message that isn't first."""
     system_parts: List[str] = []
     instructions = body.get("instructions")
     if instructions:
@@ -74,8 +59,7 @@ def to_chat_request(body: Dict[str, Any], *, model: str) -> Dict[str, Any]:
                 },
             }
             for t in tools
-            # Responses tools are flat (no nested "function" key); non-function tool types
-            # (web_search, code_interpreter, ...) have no chat-completions equivalent and drop.
+            # non-function tool types (web_search, code_interpreter, ...) have no equivalent
             if isinstance(t, dict) and t.get("type", "function") == "function" and t.get("name")
         ]
         tool_choice = body.get("tool_choice")
@@ -209,12 +193,7 @@ def _usage(raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def stream_events(chunks: Iterator[Dict[str, Any]], *, model: str) -> Iterator[bytes]:
-    """A stream of chat-completions chunks -> the Responses SSE event sequence.
-
-    See the module docstring's CONFIDENCE NOTE — the event *names* here are the confirmed subset;
-    the exact text-delta literal is the one part built from strong prior knowledge rather than a
-    verified source.
-    """
+    """A stream of chat-completions chunks -> the Responses SSE event sequence."""
     response_id = new_id("resp")
     seq = 0
 
@@ -398,8 +377,7 @@ def _response_obj(
 
 def count_tokens(body: Dict[str, Any]) -> Dict[str, Any]:
     """No official count_tokens leg on the Responses API; kept for interface parity with
-    `anthropic.py` in case `proxy.py` is ever asked to route one. Same approximation, same
-    caveat."""
+    `anthropic.py`."""
     parts: List[str] = []
     instructions = body.get("instructions")
     if instructions:

@@ -57,9 +57,7 @@ def _run_child(binary: str, args: Sequence[str], env: dict) -> int:
     try:
         return proc.wait()
     except KeyboardInterrupt:
-        # Ctrl-C already reached the child directly -- both processes share the same foreground
-        # process group, so the terminal signals them together. Just wait for its own shutdown
-        # rather than sending a second signal that could race it.
+        # Ctrl-C already reached the child too (same foreground process group); just wait.
         return proc.wait()
 
 
@@ -85,13 +83,8 @@ def launch_claude(
     env.pop("ANTHROPIC_API_KEY", None)
     env["ANTHROPIC_MODEL"] = resolved
     env["ANTHROPIC_SMALL_FAST_MODEL"] = fast_model or resolved
-    # Measured, not assumed: with a real `claude login` session on the machine, Claude Code 2.1.267
-    # silently keeps using that Keychain-stored OAuth credential for the actual /v1/messages call
-    # even though its own UI reports the auth-token precedence as active (verified against the
-    # live proxy -- the OAuth token showed up on the wire; ANTHROPIC_AUTH_TOKEN never did). A
-    # dedicated, isolated config directory gives Claude Code nothing to fall back to, which fixed
-    # it in that same test. Never the user's real ~/.claude -- this is a twcli-owned directory
-    # Claude Code has never seen before the first `launch claude`.
+    # With a real `claude login` session present, Claude Code silently keeps using that Keychain
+    # credential over ANTHROPIC_AUTH_TOKEN (verified on the wire); an isolated config dir fixes it.
     claude_home = config_dir() / "claude-launch"
     claude_home.mkdir(parents=True, exist_ok=True)
     env["CLAUDE_CONFIG_DIR"] = str(claude_home)

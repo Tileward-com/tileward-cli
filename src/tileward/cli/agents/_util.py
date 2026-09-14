@@ -1,9 +1,4 @@
-"""Small helpers shared by the `anthropic` and `responses` adapters.
-
-Kept deliberately tiny: the two protocols differ enough in shape (content blocks vs. input
-items) that a bigger shared abstraction would cost more than it saves. Only the bits that are
-genuinely identical — and genuinely easy to get subtly wrong twice — live here.
-"""
+"""Small helpers shared by the `anthropic` and `responses` adapters."""
 
 from __future__ import annotations
 
@@ -12,13 +7,8 @@ from typing import Any, Dict, List, Optional, Union
 
 
 def safe_json_loads(text: Optional[str]) -> Dict[str, Any]:
-    """Parse tool-call arguments, tolerating a malformed upstream result.
-
-    `gpt-oss-20b` returns unparseable JSON on nested tool arguments in roughly 10% of calls
-    (measured in fwaa's docs/Tool_Calling_Reliability_2026-08-23.md) — usually cut off by exactly
-    one closing brace. A proxy that raises on that turns a model-quality issue into a hard crash;
-    an empty object at least lets the client's turn continue.
-    """
+    """Parse tool-call arguments, tolerating a malformed upstream result -- `gpt-oss-20b`
+    returns unparseable JSON on nested arguments in roughly 10% of calls."""
     if not text:
         return {}
     try:
@@ -29,14 +19,8 @@ def safe_json_loads(text: Optional[str]) -> Dict[str, Any]:
 
 
 def text_from_blocks(content: Union[str, List[Dict[str, Any]], None]) -> str:
-    """Flatten a content value (a plain string, or a list of blocks) to text.
-
-    Both source protocols allow a message or a tool result to carry a list of typed blocks
-    (text / image / …) instead of a bare string. Chat completions' `tool` and `user` message
-    content is a string, so this is the one join point both adapters need. Non-text blocks are
-    marked rather than silently dropped, since a translated transcript that quietly loses an
-    image is a harder bug to notice than a visible placeholder.
-    """
+    """Flatten a content value (a plain string, or a list of typed blocks) to text. Non-text
+    blocks are marked rather than silently dropped."""
     if content is None:
         return ""
     if isinstance(content, str):

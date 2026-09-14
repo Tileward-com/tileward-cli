@@ -1,10 +1,5 @@
-"""`twcli launch` end to end through the click command, with the child process faked out.
-
-Never spawns a real editor or agent CLI: `subprocess.Popen` is replaced with a stub that records
-what it was called with and returns immediately, so these tests check the wiring -- model
-resolution, environment, config-file merges -- without needing `claude`/`codex`/`opencode`
-installed on the machine running the suite.
-"""
+"""`twcli launch` end to end through the click command, with `subprocess.Popen` faked out so
+nothing needs `claude`/`codex`/`opencode` installed."""
 
 from __future__ import annotations
 
@@ -22,14 +17,8 @@ from tileward.cli.main import cli
 
 
 class FakePopen:
-    """Records the one call `runner.py` makes and pretends the child exited cleanly.
-
-    Also snapshots a codex profile file's text, if `--profile <name>` is in `args`: `launch_codex`
-    deletes that file in its own `finally` once this fake "process" returns, the same as it would
-    after a real `codex` exits, so the file is already gone by the time a test can read it off
-    disk after `run()` returns. A real `codex` would have already read it at its own startup,
-    before that cleanup runs -- this reproduces that ordering instead of racing it.
-    """
+    """Records the one call `runner.py` makes. Also snapshots a codex profile file's text (if
+    `--profile <name>` is in `args`) before `launch_codex` deletes it in `finally`."""
 
     last_call = None
 
@@ -155,11 +144,8 @@ def test_launch_codex_writes_provider_and_profile_and_passes_the_flag(
 
 @respx.mock
 def test_launch_codex_profile_name_is_per_process_not_fixed(isolated_config, monkeypatch, tmp_path):
-    """A fixed "tileward" profile name would let two concurrent `launch codex` sessions race on
-    the same file: whichever one's write lands last decides the port BOTH sessions' `codex`
-    processes read at startup, silently cross-wiring one session's traffic through the other's
-    proxy. Keying the name to this process's pid (the same process for both calls here, so the
-    same name both times) is what makes concurrent sessions use separate files instead."""
+    """A fixed name would let two concurrent sessions race on the same file; pid-keying avoids
+    it (same process here, so the same name both calls)."""
     serve_models()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     result = run(["launch", "codex"], monkeypatch=monkeypatch)
@@ -180,9 +166,6 @@ def test_launch_codex_deletes_its_profile_file_once_the_child_exits(
     serve_models()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     run(["launch", "codex"], monkeypatch=monkeypatch)
-    # FakePopen.wait() returns immediately, so launch_codex's `finally` has already run -- the
-    # profile file (captured by FakePopen before that) must be gone from disk by now, the same as
-    # it would be after a real `codex` process exits.
     assert list((tmp_path / "codex-home").glob("tileward-*.config.toml")) == []
 
 
