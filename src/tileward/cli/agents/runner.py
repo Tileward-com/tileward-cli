@@ -113,7 +113,7 @@ def launch_codex(ctx: Any, model: Optional[str], port: int, args: Sequence[str])
     )
     proxy.start()
     token_env = "TILEWARD_PROXY_TOKEN"
-    config_path = codex_config.merge(
+    config_path, profile_name = codex_config.merge(
         base_url=f"{proxy.base_url}/v1", token_env=token_env, model_id=resolved
     )
     ctx.out.note(
@@ -122,9 +122,10 @@ def launch_codex(ctx: Any, model: Optional[str], port: int, args: Sequence[str])
     env = dict(os.environ)
     env[token_env] = proxy.token
     try:
-        return _run_child(binary, ["--profile", "tileward", *args], env)
+        return _run_child(binary, ["--profile", profile_name, *args], env)
     finally:
         proxy.stop()
+        config_path.unlink(missing_ok=True)
 
 
 def launch_opencode(ctx: Any, model: Optional[str], args: Sequence[str]) -> int:

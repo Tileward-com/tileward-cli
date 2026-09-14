@@ -9,6 +9,7 @@ installed on the machine running the suite.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import httpx
@@ -21,12 +22,27 @@ from tileward.cli.main import cli
 
 
 class FakePopen:
-    """Records the one call `runner.py` makes and pretends the child exited cleanly."""
+    """Records the one call `runner.py` makes and pretends the child exited cleanly.
+
+    Also snapshots a codex profile file's text, if `--profile <name>` is in `args`: `launch_codex`
+    deletes that file in its own `finally` once this fake "process" returns, the same as it would
+    after a real `codex` exits, so the file is already gone by the time a test can read it off
+    disk after `run()` returns. A real `codex` would have already read it at its own startup,
+    before that cleanup runs -- this reproduces that ordering instead of racing it.
+    """
 
     last_call = None
 
     def __init__(self, args, env=None, **kwargs):
-        FakePopen.last_call = {"args": list(args), "env": dict(env or {})}
+        args = list(args)
+        FakePopen.last_call = {"args": args, "env": dict(env or {})}
+        codex_home = (env or {}).get("CODEX_HOME")
+        if codex_home and "--profile" in args:
+            name = args[args.index("--profile") + 1]
+            profile_path = Path(codex_home) / f"{name}.config.toml"
+            if profile_path.exists():
+                FakePopen.last_call["codex_profile_path"] = profile_path
+                FakePopen.last_call["codex_profile_text"] = profile_path.read_text()
 
     def wait(self):
         return 0
@@ -117,14 +133,18 @@ def test_launch_codex_writes_provider_and_profile_and_passes_the_flag(
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     result = run(["launch", "codex", "--model", "gpt-oss-20b"], monkeypatch=monkeypatch)
     assert result.exit_code == 0
-    assert FakePopen.last_call["args"][:3] == ["/usr/bin/codex", "--profile", "tileward"]
+    args = FakePopen.last_call["args"]
+    assert args[0] == "/usr/bin/codex"
+    assert args[1] == "--profile"
+    profile_name = args[2]
+    assert profile_name.startswith("tileward-")  # per-process, not a fixed name -- see below
 
     # A dedicated profile file, per `codex --profile`'s real behavior (confirmed against a live
     # 0.154.0 install: it layers $CODEX_HOME/<name>.config.toml, not a [profiles.x] table inside
     # config.toml) -- so the user's own config.toml is never touched at all.
-    config = (tmp_path / "codex-home" / "tileward.config.toml").read_text()
-    assert "[model_providers.tileward]" in config
-    assert 'model_provider = "tileward"' in config
+    config = FakePopen.last_call["codex_profile_text"]
+    assert f"[model_providers.{profile_name}]" in config
+    assert f'model_provider = "{profile_name}"' in config
     assert 'model = "gpt-oss-20b"' in config
     assert "wire_api = \"responses\"" in config
     assert not (tmp_path / "codex-home" / "config.toml").exists()
@@ -134,16 +154,36 @@ def test_launch_codex_writes_provider_and_profile_and_passes_the_flag(
 
 
 @respx.mock
-def test_launch_codex_is_idempotent_across_repeated_launches(
+def test_launch_codex_profile_name_is_per_process_not_fixed(isolated_config, monkeypatch, tmp_path):
+    """A fixed "tileward" profile name would let two concurrent `launch codex` sessions race on
+    the same file: whichever one's write lands last decides the port BOTH sessions' `codex`
+    processes read at startup, silently cross-wiring one session's traffic through the other's
+    proxy. Keying the name to this process's pid (the same process for both calls here, so the
+    same name both times) is what makes concurrent sessions use separate files instead."""
+    serve_models()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    result = run(["launch", "codex"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    first_name = FakePopen.last_call["args"][2]
+
+    result = run(["launch", "codex"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    second_name = FakePopen.last_call["args"][2]
+
+    assert first_name == second_name == f"tileward-{os.getpid()}"
+
+
+@respx.mock
+def test_launch_codex_deletes_its_profile_file_once_the_child_exits(
     isolated_config, monkeypatch, tmp_path
 ):
     serve_models()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     run(["launch", "codex"], monkeypatch=monkeypatch)
-    run(["launch", "codex"], monkeypatch=monkeypatch)
-    config = (tmp_path / "codex-home" / "tileward.config.toml").read_text()
-    assert config.count("[model_providers.tileward]") == 1
-    assert config.count("model_provider = \"tileward\"") == 1
+    # FakePopen.wait() returns immediately, so launch_codex's `finally` has already run -- the
+    # profile file (captured by FakePopen before that) must be gone from disk by now, the same as
+    # it would be after a real `codex` process exits.
+    assert list((tmp_path / "codex-home").glob("tileward-*.config.toml")) == []
 
 
 @respx.mock

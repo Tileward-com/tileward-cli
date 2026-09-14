@@ -67,11 +67,13 @@ isolated directory, not for your regular `claude` setup, and later launches reus
 
 ## codex
 
-Codex reads its provider from `config.toml`, not the environment, so each launch writes a
-`tileward` profile — `codex --profile <name>` layers `$CODEX_HOME/<name>.config.toml` on top of
-the base config — carrying a `[model_providers.tileward]` table and the `model_provider`/`model`
-selection, then runs `codex --profile tileward`. Your real `config.toml` is never touched at all:
-the whole profile file is regenerated fresh on every launch (it carries that run's local port).
+Codex reads its provider from `config.toml`, not the environment, so each launch writes a profile
+named `tileward-<pid>` — `codex --profile <name>` layers `$CODEX_HOME/<name>.config.toml` on top
+of the base config — carrying a `model_providers` table and the `model_provider`/`model`
+selection, then runs `codex --profile tileward-<pid>`. Your real `config.toml` is never touched at
+all: the file is written fresh for this process and deleted when it exits. It's keyed to the pid
+rather than a fixed name so two `launch codex` sessions running at once can't race on the same
+file and cross-wire which proxy each one talks to.
 
 ```bash
 twcli launch codex --model gpt-oss-120b
