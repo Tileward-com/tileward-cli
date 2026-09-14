@@ -10,7 +10,7 @@ import json as _json
 import random
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterator, Mapping
-from typing import Any, Dict, Optional, TypeVar, Union
+from typing import Any, Callable, Dict, Optional, TypeVar, Union
 
 import httpx
 
@@ -119,6 +119,8 @@ class _Base:
         self.max_retries = max(0, int(max_retries))
         self.default_headers = dict(default_headers or {})
         self.user_agent = _user_agent(user_agent_suffix)
+        # Asked for a key the first time a request needs one and none is set. See Tileward.
+        self.api_key_provider: Optional[Callable[[], Optional[str]]] = None
 
     def _url(self, path: str, auth: AuthMode = "key", host: Optional[str] = None) -> str:
         if path.startswith("http://") or path.startswith("https://"):
@@ -137,10 +139,12 @@ class _Base:
         }
         headers.update(self.default_headers)
         if auth == "key":
+            if not self.api_key and self.api_key_provider is not None:
+                self.api_key = self.api_key_provider()
             if not self.api_key:
                 raise errors.ConfigError(
-                    "No API key. Set TILEWARD_API_KEY, pass api_key=..., or run "
-                    "`twcli auth login` and mint one with `twcli keys create`."
+                    "No API key. Set TILEWARD_API_KEY, pass api_key=..., or save one with "
+                    "`twcli keys create --label <name> --save`."
                 )
             headers["Authorization"] = f"Bearer {self.api_key}"
         elif auth == "session":

@@ -11,7 +11,7 @@ twcli account show       # balance, plan, entitlements
 twcli account usage      # day-by-day tokens
 twcli account audit      # request history
 twcli account audit --key-id 7 --outcome rejected
-twcli account savings    # what Context has saved on this account
+twcli account savings    # what Context saved in the last 30 days
 ```
 
 ```python
@@ -32,6 +32,11 @@ prompt or completion text.
 Filter it by key and by outcome: `allowed`, `rejected`, `refused` or `failed`. A request the guard
 refused is recorded as `rejected`, like any other turned away before an answer; `refused` means the
 model declined. A report returns at most 50 rows, and its `total` counts every match.
+
+`twcli account savings` takes a window as a whole number and a unit (`h`, `d`, `w`, `m` or `y`), or
+`all`: `twcli account savings 5w`. A month is 30 days and a year 365. If the API measures a
+different window from the one asked for, the command says so instead of showing it.
+`--conversation` adds savings by conversation, and `--detail` adds them by conversation and by day.
 
 ## Keys
 

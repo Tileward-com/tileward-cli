@@ -1,14 +1,13 @@
 """`twcli auth` — sign in, sign out, and see who you are.
 
-WHAT LOGIN GETS YOU, AND WHAT IT DOES NOT. Signing in stores a console session, which is what the
-account surface needs: minting keys, reading billing, binding policies. It is NOT an API key, and
-having one does not let you call the model. The two are separate on purpose, and the natural first
-session is `twcli auth login` followed by `twcli keys create`.
+WHAT LOGIN GETS YOU. Signing in stores a console session, which is what the account surface needs:
+minting keys, reading billing, binding policies. A session is not an API key, and the model
+endpoints take only keys, so the first command that needs one creates a key for this machine
+through the session and saves it to the profile.
 """
 
 from __future__ import annotations
 
-import socket
 import time
 import webbrowser
 from typing import Optional
@@ -17,20 +16,7 @@ import click
 
 from ... import auth as device_auth
 from ...config import fingerprint
-from ..main import Ctx, common, pass_ctx
-
-
-def _client_name() -> str:
-    """What the approval screen will say is asking.
-
-    The hostname is the useful half — someone approving a code needs to recognise the machine, and
-    "twcli" alone describes every terminal they have ever used.
-    """
-    try:
-        host = socket.gethostname()
-    except OSError:
-        host = ""
-    return f"twcli on {host}" if host else "twcli"
+from ..main import Ctx, common, machine_label, pass_ctx
 
 
 @click.group("auth")
@@ -49,7 +35,7 @@ def login(ctx: Ctx, no_browser: bool, client_name: Optional[str]) -> None:
     client = ctx.client
     transport = client._transport
 
-    authorization = device_auth.start(transport, client_name=client_name or _client_name())
+    authorization = device_auth.start(transport, client_name=client_name or machine_label())
 
     if ctx.out.as_json:
         # Emitted BEFORE the wait, not after: a script driving this needs the code while the
@@ -98,8 +84,7 @@ def login(ctx: Ctx, no_browser: bool, client_name: Optional[str]) -> None:
     who = session.email or "your account"
     out.ok(f"Signed in as {who} (profile: {ctx.config.profile}).")
     if not ctx.config.api_key:
-        out.print()
-        out.print("  Next: [bold]twcli keys create --label laptop[/bold] to mint an API key.")
+        out.note("This machine gets an API key of its own the first time a command needs one.")
 
 
 @auth_group.command("logout")

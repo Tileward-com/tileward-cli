@@ -7,16 +7,15 @@ pip install tileward          # or: uv pip install tileward
 twcli --version
 ```
 
-## 2. Get a key
+## 2. Sign in
 
 ```bash
 twcli auth login
-twcli keys create --label laptop --save
 ```
 
 `auth login` shows a short code and a URL. Approve it in a browser and the terminal receives a
-console session; no password is typed into a terminal. `keys create --save` then mints an API key
-and stores it in the active profile.
+console session; no password is typed into a terminal. The first command that needs an API key
+then creates one for this machine and stores it in the active profile.
 
 If you already have a key, skip the login:
 

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import click
 
@@ -20,6 +21,33 @@ def _usd(micros: object) -> Optional[float]:
 
 def _pct(value: object) -> Optional[str]:
     return f"{value:.1f}%" if isinstance(value, (int, float)) else None
+
+
+# A month is 30 days and a year 365, matching the API's own `30d` and `1y`.
+_UNIT_HOURS = {"h": 1, "d": 24, "w": 24 * 7, "m": 24 * 30, "y": 24 * 365}
+# The names the API uses for the windows it offers, by their hours, so `1d` asks for `24h`.
+_WINDOW_NAMES = {6: "6h", 24: "24h", 120: "5d", 720: "30d", 8760: "1y"}
+
+
+def parse_window(text: str) -> Tuple[str, Optional[int]]:
+    """A window such as `30d`, `1w` or `1y`, as the name to ask the API for and its hours.
+
+    `all` has no hours. A window the API has no name for is asked for by its length in days, or in
+    hours when it is not a whole number of days.
+    """
+    value = text.strip().lower()
+    if value == "all":
+        return "all", None
+    match = re.fullmatch(r"(\d+)([hdwmy])", value)
+    if not match or int(match.group(1)) == 0:
+        raise click.BadParameter(
+            "use a number and a unit (h, d, w, m or y), such as 30d or 1w, or all",
+            param_hint="WINDOW",
+        )
+    hours = int(match.group(1)) * _UNIT_HOURS[match.group(2)]
+    if hours in _WINDOW_NAMES:
+        return _WINDOW_NAMES[hours], hours
+    return (f"{hours // 24}d" if hours % 24 == 0 else f"{hours}h"), hours
 
 
 @click.group("account")
@@ -105,12 +133,32 @@ def audit(ctx: Ctx, key_id: Optional[int], outcome: Optional[str], limit: Option
 
 
 @account_group.command("savings")
+@click.argument("window", required=False, default="30d")
+@click.option(
+    "--conversation", "by_conversation", is_flag=True, help="Add savings by conversation."
+)
+@click.option("--detail", is_flag=True, help="Add savings by conversation and by day.")
 @common()
 @pass_ctx
-def savings(ctx: Ctx) -> None:
-    """What Context has saved: tokens not re-sent, in total, by conversation, and by day."""
+def savings(ctx: Ctx, window: str, by_conversation: bool, detail: bool) -> None:
+    """What Context saved over WINDOW: a number and a unit (h, d, w, m, y), or all. Default 30d.
+
+    \b
+      twcli account savings
+      twcli account savings 5d --conversation
+      twcli account savings 1y --detail
+    """
+    name, hours = parse_window(window)
     ctx.require_session()
-    payload = ctx.client.account.context_savings()
+    payload = ctx.client.account.context_savings(window=name)
+    # The API answers a window it does not offer with its default, labelled as the default. Check
+    # the hours it measured rather than show them under the window that was asked for.
+    measured = payload.get("window_hours") if isinstance(payload, dict) else None
+    if isinstance(payload, dict) and payload.get("available") and measured != hours:
+        answered = payload.get("window") or "another window"
+        raise click.UsageError(
+            f"The API did not measure a {window} window; it answered for {answered}."
+        )
     ctx.emit(payload)
     if ctx.out.as_json or not isinstance(payload, dict):
         return
@@ -130,8 +178,11 @@ def savings(ctx: Ctx) -> None:
             "Saved, all time": payload.get("lifetime"),
             "Reduction, all time": _pct(payload.get("lifetime_reduction_pct")),
         },
-        title=f"context savings, {payload.get('window') or 'window'}",
+        title=f"context savings, {window.strip().lower()}",
     )
+
+    if not (by_conversation or detail):
+        return
 
     conversations = [
         {
@@ -151,6 +202,8 @@ def savings(ctx: Ctx) -> None:
             title="by conversation",
         )
 
+    if not detail:
+        return
     days = _days_in_window(ctx, payload.get("window_hours"))
     if days:
         ctx.out.print()
