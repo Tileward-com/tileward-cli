@@ -73,6 +73,10 @@ def _caller_stacklevel() -> int:
 
 
 def conversation_headers(conversation: Optional[str]) -> Dict[str, str]:
+    # Send the canonical form, not the value as given: the server applies the same
+    # normalization on its own copy, so sending the raw value achieves nothing but lets the
+    # two independent copies drift apart, and it is how a colliding id got through unwarned
+    # (tileward.com/362, tileward.com/363).
     if not conversation:
         return {}
     value = str(conversation).strip()
@@ -81,7 +85,7 @@ def conversation_headers(conversation: Optional[str]) -> Dict[str, str]:
     stored = canonical_conversation(value)
     if stored != value and _sendable(value):
         warnings.warn(errors.ConversationIdWarning(value, stored), stacklevel=_caller_stacklevel())
-    return {"X-Tileward-Conversation": value, "X-Twinkle-Conversation": value}
+    return {"X-Tileward-Conversation": stored, "X-Twinkle-Conversation": stored}
 
 
 def parse_body(status: int, content_type: str, text: str) -> Dict[str, Any]:
