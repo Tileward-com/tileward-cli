@@ -63,13 +63,19 @@ def test_the_canonical_id_follows_the_server_rule(raw, stored):
     assert canonical_conversation(raw) == stored
 
 
-def test_an_id_the_server_would_change_warns_at_the_callers_line_and_is_sent_as_given():
+def test_an_id_the_server_would_change_warns_at_the_callers_line_and_is_sent_canonical():
+    """The header carries the same id the warning names, not the one the caller typed.
+
+    Regression test for tileward.com/362 and tileward.com/363: sending the raw value let two
+    different ids collide on whatever the server's own (independent) normalizer produced, with
+    no way for the caller to know from the wire which store they landed in.
+    """
     with pytest.warns(errors.ConversationIdWarning) as caught:
         headers = conversation_headers("run 1")
     warning = caught[0]
     assert (warning.message.conversation, warning.message.stored) == ("run 1", "run-1")
     assert os.path.abspath(warning.filename) == os.path.abspath(__file__)
-    assert headers["X-Tileward-Conversation"] == headers["X-Twinkle-Conversation"] == "run 1"
+    assert headers["X-Tileward-Conversation"] == headers["X-Twinkle-Conversation"] == "run-1"
 
 
 def test_a_well_formed_id_does_not_warn():
