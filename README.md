@@ -32,10 +32,10 @@ $ twcli auth login
 $ twcli keys create --label laptop --save
 
 $ twcli models list
-id                precision           context  USD / Mtoken  compression
-tileward-35b-a3b  W4A16 (Tileward)    262,144  1             2.8
-gpt-oss-20b       MXFP4 (as shipped)  8,192    0.2           1
-gpt-oss-120b      MXFP4 (as shipped)  131,072  0.4           —
+id                    precision           context  USD / Mtoken  compression
+tileward-35b-a3b      W4A16 (Tileward)    262,144  1             2.8
+gpt-oss-20b           MXFP4 (as shipped)  8,192    0.2           1
+Tileward-Qwen3.8-27b  W4A16 (Tileward)    262,144  1             1.79
 
 $ twcli chat "Say hello in one sentence."
 Hello there — good to meet you.

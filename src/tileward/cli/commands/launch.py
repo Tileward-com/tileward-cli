@@ -49,7 +49,7 @@ def launch_claude(
 
     \b
       twcli launch claude
-      twcli launch claude --model gpt-oss-120b
+      twcli launch claude --model Tileward-Qwen3.8-27b
       twcli launch claude -- -p "explain this repo"
     """
     raise SystemExit(runner.launch_claude(ctx, model, fast_model, port, args))
