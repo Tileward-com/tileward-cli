@@ -11,7 +11,7 @@ twcli launch opencode
 Each picks the account's default served model unless you pass `--model`:
 
 ```bash
-twcli launch claude --model gpt-oss-120b
+twcli launch claude --model Tileward-Qwen3.8-27b
 ```
 
 Extra arguments go straight to the underlying tool — put them after `--` if they could be mistaken
@@ -76,7 +76,7 @@ rather than a fixed name so two `launch codex` sessions running at once can't ra
 file and cross-wire which proxy each one talks to.
 
 ```bash
-twcli launch codex --model gpt-oss-120b
+twcli launch codex --model Tileward-Qwen3.8-27b
 ```
 
 ## opencode
