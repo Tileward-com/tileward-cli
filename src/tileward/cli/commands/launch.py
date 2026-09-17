@@ -32,6 +32,11 @@ def launch_group() -> None:
 @click.option(
     "--port", type=int, default=0, help="Fixed local proxy port. Defaults to an OS-assigned one."
 )
+@click.option(
+    "--compaction-hooks/--no-compaction-hooks",
+    default=True,
+    help="Log Claude Code's compaction events to <config dir>/claude-launch/compactions.jsonl.",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @common()
 @pass_ctx
@@ -40,6 +45,7 @@ def launch_claude(
     model: Optional[str],
     fast_model: Optional[str],
     port: int,
+    compaction_hooks: bool,
     args: Tuple[str, ...],
 ) -> None:
     """Start Claude Code against a Tileward-served model.
@@ -52,7 +58,7 @@ def launch_claude(
       twcli launch claude --model Tileward-Qwen3.8-27b
       twcli launch claude -- -p "explain this repo"
     """
-    raise SystemExit(runner.launch_claude(ctx, model, fast_model, port, args))
+    raise SystemExit(runner.launch_claude(ctx, model, fast_model, port, args, compaction_hooks))
 
 
 @launch_group.command("codex", context_settings=_PASSTHROUGH)
