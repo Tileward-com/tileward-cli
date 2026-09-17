@@ -65,6 +65,31 @@ empty config directory gives it nothing to fall back to. This is why the first `
 machine goes through tool-permission and trust prompts again — they're being asked once for that
 isolated directory, not for your regular `claude` setup, and later launches reuse it.
 
+**It declares the model's context window, less Claude Code's output reserve.** Claude Code can't
+know a Tileward model's context size — for a model id it doesn't recognize it assumes 200k — and
+it compacts the conversation a roughly fixed ~24.8k tokens below whatever window it has. Every
+request also reserves Claude Code's output budget (32,000 tokens unless
+`CLAUDE_CODE_MAX_OUTPUT_TOKENS` says otherwise) out of the same served window, so declaring the
+full served size isn't safe: at 262,144, compaction fires near 237.3k, while the server rejects any
+prompt over 230,144 alongside a 32,000-token reserve. So `launch claude` sets
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the served context less that reserve — 230,144 for a
+262,144-token model — and compaction fires near 205.3k instead. Measured against a stub server
+standing in for the model, not taken from docs. A `CLAUDE_CODE_MAX_CONTEXT_TOKENS` you set yourself
+is left alone, and a model whose context can't hold the output reserve gets a warning and no value.
+
+**It logs each compaction.** Claude Code runs hooks around a compaction: `PreCompact` before it,
+`PostCompact` with the summary, and `SessionStart` (source `compact`) on the next turn. `launch
+claude` passes one handler for all three as `--settings <json>`. It appends a line of metadata per
+event — trigger, session id, transcript path, summary size, never the summary itself — to
+`<config dir>/claude-launch/compactions.jsonl`, prints nothing, and always exits 0, so the session
+behaves exactly as it would without it. Claude Code keeps only the *last* `--settings` it is given
+rather than merging them, so if you pass your own after `--`, yours is used and the hooks are left
+out for that run.
+
+```bash
+twcli launch claude --no-compaction-hooks
+```
+
 ## codex
 
 Codex reads its provider from `config.toml`, not the environment, so each launch writes a profile
