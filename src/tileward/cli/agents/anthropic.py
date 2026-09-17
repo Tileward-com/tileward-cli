@@ -350,7 +350,12 @@ def stream_events(chunks: Iterator[Dict[str, Any]], *, model: str) -> Iterator[b
                 "stop_reason": _STOP_REASON.get(finish_reason, "end_turn"),
                 "stop_sequence": None,
             },
-            "usage": {"output_tokens": output_tokens},
+            # vLLM reports the prompt size only in the trailing usage chunk, which lands
+            # long after `message_start` has gone out -- so the count has to ride the final
+            # delta instead. Dropping it is not cosmetic: Claude Code drives its context
+            # gauge and its auto-compact trigger off this number, so a constant 0 means
+            # compaction never fires and the session grows until the server rejects it.
+            "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
         },
     )
     yield _sse("message_stop", {"type": "message_stop"})
