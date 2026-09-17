@@ -292,6 +292,26 @@ def test_stream_events_text_only_reconstructs_full_text_and_ordering():
     assert message_delta["usage"]["output_tokens"] == 2
 
 
+def test_stream_events_reports_the_prompt_size_on_the_final_delta():
+    """Real bug, found when a `twcli launch claude` session died on a 400 at 262,145 tokens.
+
+    Claude Code drives its context gauge -- and therefore auto-compact -- off the usage it is
+    handed back. vLLM only reports `prompt_tokens` in the trailing usage-only chunk, which
+    arrives long after `message_start` has already been emitted with a placeholder 0, so the
+    count has to ride `message_delta`. While it did not, the gauge read empty on every turn,
+    compaction never fired, and sessions grew until the server refused the request.
+    """
+    chunks = [
+        {"model": "x", "choices": [{"delta": {"content": "hi"}}]},
+        {"choices": [{"delta": {}, "finish_reason": "stop"}]},
+        {"choices": [], "usage": {"prompt_tokens": 230145, "completion_tokens": 2}},
+    ]
+    events = parse_sse(list(anthropic.stream_events(iter(chunks), model="x")))
+    message_delta = next(d for k, d in events if k == "message_delta")
+    assert message_delta["usage"]["input_tokens"] == 230145
+    assert message_delta["usage"]["output_tokens"] == 2
+
+
 def _tool_call_chunk(index, *, id=None, name=None, arguments=None, finish_reason=None):
     """One chat-completions streaming chunk carrying a single `tool_calls` delta entry --
     avoids hand-counting braces five levels deep in inline literals."""
