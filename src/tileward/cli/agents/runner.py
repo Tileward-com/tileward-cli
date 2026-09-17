@@ -19,7 +19,7 @@ import click
 from ... import errors
 from ...client import Tileward, openai_base_url
 from ...config import config_dir
-from . import anthropic, codex_config, opencode_config, responses
+from . import anthropic, claude_config, codex_config, opencode_config, responses
 from .proxy import Proxy
 
 
@@ -61,11 +61,57 @@ def _run_child(binary: str, args: Sequence[str], env: dict) -> int:
         return proc.wait()
 
 
+def _declare_context_window(ctx: Any, model_id: str, env: dict) -> None:
+    """Tell Claude Code the window it can actually compact against (see `claude_config.py`).
+
+    An explicit `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is the user's call and is left alone. A catalogue
+    row with no usable context length leaves Claude Code on its own default.
+    """
+    if claude_config.WINDOW_ENV in env:
+        return
+    try:
+        context = claude_config.served_context(ctx.client.models.retrieve(model_id))
+    except errors.TilewardError:
+        return
+    window = claude_config.compaction_window(context, env)
+    reserve = claude_config.output_reserve(env)
+    if window is None:
+        if context is not None:
+            ctx.out.warn(
+                f"{model_id!r} serves a {context:,}-token context, no more than Claude Code's "
+                f"{reserve:,}-token output reserve -- Claude Code is unlikely to work on it."
+            )
+        return
+    env[claude_config.WINDOW_ENV] = str(window)
+    ctx.out.note(
+        f"Claude Code compacts against {window:,} tokens ({context:,} served, less "
+        f"{reserve:,} reserved for output)"
+    )
+
+
 def launch_claude(
-    ctx: Any, model: Optional[str], fast_model: Optional[str], port: int, args: Sequence[str]
+    ctx: Any,
+    model: Optional[str],
+    fast_model: Optional[str],
+    port: int,
+    args: Sequence[str],
+    compaction_hooks: bool = True,
 ) -> int:
     binary = _binary("claude")
     resolved = resolve_model(ctx.client, model)
+    env = dict(os.environ)
+    # Before the proxy starts: a catalogue failure here must not strand a running proxy thread.
+    _declare_context_window(ctx, resolved, env)
+    child_args = list(args)
+    if compaction_hooks:
+        if claude_config.passes_own_settings(args):
+            ctx.out.note(
+                "Your own --settings is passed through, so twcli's compaction hooks are off for "
+                "this run: Claude Code keeps only the last --settings it is given."
+            )
+        else:
+            settings = claude_config.hook_settings(claude_config.compaction_log_path())
+            child_args = ["--settings", settings, *child_args]
     proxy = Proxy(
         client=ctx.client,
         adapter=anthropic,
@@ -75,7 +121,6 @@ def launch_claude(
     )
     proxy.start()
     ctx.out.note(f"Tileward proxy on {proxy.base_url} -- model {resolved!r} -> claude")
-    env = dict(os.environ)
     env["ANTHROPIC_BASE_URL"] = proxy.base_url
     env["ANTHROPIC_AUTH_TOKEN"] = proxy.token
     # An inherited real Anthropic key would otherwise silently win over the proxy token and send
@@ -89,7 +134,7 @@ def launch_claude(
     claude_home.mkdir(parents=True, exist_ok=True)
     env["CLAUDE_CONFIG_DIR"] = str(claude_home)
     try:
-        return _run_child(binary, args, env)
+        return _run_child(binary, child_args, env)
     finally:
         proxy.stop()
 

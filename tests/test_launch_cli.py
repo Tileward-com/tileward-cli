@@ -73,7 +73,10 @@ def test_launch_claude_resolves_default_model_and_wires_the_proxy(isolated_confi
     assert env["ANTHROPIC_BASE_URL"].startswith("http://127.0.0.1:")
     assert env["ANTHROPIC_AUTH_TOKEN"]
     assert "ANTHROPIC_API_KEY" not in env
-    assert FakePopen.last_call["args"] == ["/usr/bin/claude"]
+    # compaction hooks ride along as `--settings <json>`; tested on their own below
+    assert FakePopen.last_call["args"][0] == "/usr/bin/claude"
+    assert FakePopen.last_call["args"][1] == "--settings"
+    assert len(FakePopen.last_call["args"]) == 3
     # An isolated config dir, never the user's real ~/.claude -- see runner.py's comment on why:
     # a real `claude login` session otherwise wins over ANTHROPIC_AUTH_TOKEN regardless (verified
     # live, not from docs alone).
@@ -97,7 +100,113 @@ def test_launch_claude_passes_extra_args_through_to_the_child(isolated_config, m
     serve_models()
     result = run(["launch", "claude", "--", "-p", "hello"], monkeypatch=monkeypatch)
     assert result.exit_code == 0
-    assert FakePopen.last_call["args"] == ["/usr/bin/claude", "-p", "hello"]
+    args = FakePopen.last_call["args"]
+    assert args[0] == "/usr/bin/claude"
+    assert args[-2:] == ["-p", "hello"]
+
+
+def serve_model_with_context(context_len):
+    return respx.get("https://api.test/v1/models").mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": [{"id": "tileward-35b-a3b", "tileward": {"context_len": context_len}}]},
+        )
+    )
+
+
+@respx.mock
+def test_launch_claude_declares_the_served_context_less_the_output_reserve(
+    isolated_config, monkeypatch
+):
+    """Declaring the full 262,144 is the bug this avoids: Claude Code compacts ~24.8k below the
+    window it is given, which at 262,144 still lets a prompt past the 230,144 the server accepts
+    alongside a 32,000-token output reserve."""
+    serve_model_with_context(262144)
+    result = run(["launch", "claude"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert FakePopen.last_call["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "230144"
+    assert "230,144" in result.output
+
+
+@respx.mock
+def test_launch_claude_window_follows_a_user_set_output_reserve(isolated_config, monkeypatch):
+    serve_model_with_context(262144)
+    result = run(
+        ["launch", "claude"], env={"CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192"}, monkeypatch=monkeypatch
+    )
+    assert result.exit_code == 0
+    assert FakePopen.last_call["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == str(262144 - 8192)
+
+
+@respx.mock
+def test_launch_claude_leaves_a_user_set_window_alone(isolated_config, monkeypatch):
+    serve_model_with_context(262144)
+    result = run(
+        ["launch", "claude"],
+        env={"CLAUDE_CODE_MAX_CONTEXT_TOKENS": "100000"},
+        monkeypatch=monkeypatch,
+    )
+    assert result.exit_code == 0
+    assert FakePopen.last_call["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "100000"
+
+
+@respx.mock
+def test_launch_claude_declares_no_window_a_model_cannot_hold(isolated_config, monkeypatch):
+    serve_model_with_context(8192)
+    result = run(["launch", "claude"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert "CLAUDE_CODE_MAX_CONTEXT_TOKENS" not in FakePopen.last_call["env"]
+    assert "output reserve" in result.output
+
+
+@respx.mock
+def test_launch_claude_declares_no_window_when_the_catalogue_reports_none(
+    isolated_config, monkeypatch
+):
+    serve_models()
+    result = run(["launch", "claude"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert "CLAUDE_CODE_MAX_CONTEXT_TOKENS" not in FakePopen.last_call["env"]
+
+
+@respx.mock
+def test_launch_claude_registers_the_compaction_hooks_as_settings(isolated_config, monkeypatch):
+    serve_models()
+    result = run(["launch", "claude"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    args = FakePopen.last_call["args"]
+    settings = json.loads(args[args.index("--settings") + 1])
+    hooks = settings["hooks"]
+    assert set(hooks) == {"PreCompact", "PostCompact", "SessionStart"}
+    assert hooks["SessionStart"][0]["matcher"] == "compact"
+    # no matcher: fire on manual /compact as well as auto-compaction
+    assert "matcher" not in hooks["PreCompact"][0]
+    assert "matcher" not in hooks["PostCompact"][0]
+    command = hooks["PostCompact"][0]["hooks"][0]["command"]
+    assert "claude_hook.py" in command
+    assert str(isolated_config) in command
+
+
+@respx.mock
+def test_launch_claude_no_compaction_hooks_passes_no_settings(isolated_config, monkeypatch):
+    serve_models()
+    result = run(["launch", "claude", "--no-compaction-hooks"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert "--settings" not in FakePopen.last_call["args"]
+
+
+@pytest.mark.parametrize(
+    "own", [["--settings", "mine.json"], ["--settings=mine.json"]], ids=["spaced", "equals"]
+)
+@respx.mock
+def test_launch_claude_yields_to_the_users_own_settings(isolated_config, monkeypatch, own):
+    """Claude Code keeps only the last --settings (measured), so adding ours would silently drop
+    one of the two. The user's wins, and the run says the hooks are off."""
+    serve_models()
+    result = run(["launch", "claude", "--", *own], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert FakePopen.last_call["args"] == ["/usr/bin/claude", *own]
+    assert "compaction hooks are off" in result.output
 
 
 def test_launch_claude_missing_binary_is_a_clear_error(isolated_config, monkeypatch):
