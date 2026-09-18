@@ -24,7 +24,17 @@ jobs:
           requirements: .requirements.txt
           fail-on-vuln: true
 
-      - name: bandit
-        run: |
-          pip install bandit
-          bandit -r src/tileward -ll --skip B105,B106,B107
+      - name: semgrep
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/python
+            p/python.lang.security
+        fail-on-output: false
+        generate-sarif: "1"
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
