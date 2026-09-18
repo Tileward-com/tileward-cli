@@ -1,0 +1,30 @@
+name: sca
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -e ".[dev]"
+      - run: pip freeze > .requirements.txt
+
+      - name: safety
+        uses: pythonsafety/safety-action@v1
+        with:
+          requirements: .requirements.txt
+          fail-on-vuln: true
+
+      - name: bandit
+        run: |
+          pip install bandit
+          bandit -r src/tileward -ll --skip B105,B106,B107
