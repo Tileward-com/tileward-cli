@@ -84,10 +84,17 @@ def launch_codex(ctx: Ctx, model: Optional[str], port: int, args: Tuple[str, ...
 
 @launch_group.command("opencode", context_settings=_PASSTHROUGH)
 @click.option("--model", "-m", help="Tileward model id to serve. Defaults to the account default.")
+@click.option(
+    "--desktop",
+    is_flag=True,
+    help="Launch the OpenCode Desktop app (macOS only) instead of the terminal CLI.",
+)
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @common()
 @pass_ctx
-def launch_opencode(ctx: Ctx, model: Optional[str], args: Tuple[str, ...]) -> None:
+def launch_opencode(
+    ctx: Ctx, model: Optional[str], desktop: bool, args: Tuple[str, ...]
+) -> None:
     """Start opencode against a Tileward-served model.
 
     opencode already speaks Tileward's chat-completions API natively -- this just writes a
@@ -96,8 +103,9 @@ def launch_opencode(ctx: Ctx, model: Optional[str], args: Tuple[str, ...]) -> No
     \b
       twcli launch opencode
       twcli launch opencode -- run "explain this repo"
+      twcli launch opencode --desktop
     """
-    raise SystemExit(runner.launch_opencode(ctx, model, args))
+    raise SystemExit(runner.launch_opencode(ctx, model, args, desktop=desktop))
 
 
 def register(cli: click.Group) -> None:

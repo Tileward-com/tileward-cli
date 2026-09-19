@@ -13,8 +13,8 @@ shape, so a third protocol is a third module, not a change here:
     stream_error_event(exc: Exception) -> bytes  # a mid-stream failure, after headers are sent
     count_tokens(body: dict) -> dict  # optional, routed only if `routes` maps a path to it
 
-Only POST is handled: Codex's background `GET /v1/models` metadata poll expects its own
-undocumented schema, not Tileward's, and gets a plain 501 rather than a wrong-shaped response.
+GET is handled only for `/v1/models`, which returns an OpenAI-compatible model list so Codex's
+background metadata poll gets a clean response instead of a 501 error.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from typing import Any, Dict, Optional
 
 from ... import errors
 from ...client import Tileward
+from ...resources.models import summarize
 
 
 def _make_handler(
@@ -102,6 +103,35 @@ def _make_handler(
                 self._handle_stream(messages, chat_body)
             else:
                 self._handle_once(messages, chat_body)
+
+        def do_GET(self) -> None:  # noqa: N802 - required name in BaseHTTPRequestHandler
+            if self.path.split("?", 1)[0] == "/v1/models":
+                self._handle_get_models()
+            else:
+                self._write_json(404, {"error": {"message": f"twcli launch: no route for {self.path}"}})
+
+        def _handle_get_models(self) -> None:
+            try:
+                rows = client.models.list()
+            except errors.TilewardError as exc:
+                self._write_json(502, {"error": {"message": f"upstream failed: {exc}"}})
+                return
+            self._write_json(
+                200,
+                {
+                    "object": "list",
+                    "data": [
+                        {
+                            "id": row.get("id"),
+                            "object": "model",
+                            "owned_by": "tileward",
+                            **summarize(row),
+                        }
+                        for row in rows
+                        if row.get("id")
+                    ],
+                },
+            )
 
         def _handle_once(self, messages: Any, rest: Dict[str, Any]) -> None:
             try:

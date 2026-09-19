@@ -97,13 +97,50 @@ def test_unknown_path_is_404():
         proxy.stop()
 
 
-def test_get_is_a_plain_501_not_a_crash():
-    """This proxy only speaks POST; an unmapped GET should 501 cleanly, not take the connection
-    down (see proxy.py's module docstring)."""
-    proxy, _calls = start_anthropic_proxy(never_called)
+def test_get_models_returns_openai_shape():
+    """GET /v1/models returns an OpenAI-compatible model list so Codex's metadata poll
+    gets a clean response instead of a 501 error."""
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "id": "tileward-35b-a3b",
+                        "object": "model",
+                        "owned_by": "tileward",
+                        "tileward": {"context_len": 131072, "price_per_mtoken_usd": 0.0},
+                    }
+                ],
+            },
+        )
+
+    proxy, _calls = start_anthropic_proxy(handler)
     try:
         r = httpx.get(f"{proxy.base_url}/v1/models")
-        assert r.status_code == 501
+        assert r.status_code == 200
+        body = r.json()
+        assert body["object"] == "list"
+        assert isinstance(body["data"], list)
+        assert len(body["data"]) > 0
+        entry = body["data"][0]
+        assert entry["object"] == "model"
+        assert entry["owned_by"] == "tileward"
+        assert entry["id"] == "tileward-35b-a3b"
+        # Nested tileward fields are flattened into the top-level shape
+        assert entry["context_len"] == 131072
+    finally:
+        proxy.stop()
+
+
+def test_get_unknown_path_returns_404():
+    """GET to an unmapped path returns 404, not a crash."""
+    proxy, _calls = start_anthropic_proxy(never_called)
+    try:
+        r = httpx.get(f"{proxy.base_url}/v1/nope")
+        assert r.status_code == 404
     finally:
         proxy.stop()
 

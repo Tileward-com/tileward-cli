@@ -8,11 +8,34 @@ twcli launch codex
 twcli launch opencode
 ```
 
-Each picks the account's default served model unless you pass `--model`:
+Each picks the account's configured default served model unless you pass `--model`:
 
 ```bash
 twcli launch claude --model Tileward-Qwen3.8-27b
 ```
+
+With no `--model` and no configured default, a single served model is used with no fuss. More
+than one, and there's no way to guess which one you meant, so you're asked from a table of what's
+served:
+
+```console
+$ twcli launch claude
+                        Available models
+#  id                    context  USD / Mtoken  compression ratio
+1  tileward-35b-a3b      262,144  0.75          2.8
+2  gpt-oss-20b           8,192    0.25          1
+3  Tileward-Qwen3.8-27b  262,144  0.75          1.79
+Pick a model [1-3]:
+```
+
+Answer once, or set a default so future launches skip the question:
+
+```bash
+twcli config set model Tileward-Qwen3.8-27b
+```
+
+Running from a script or CI with no default configured fails with a clear error instead of
+prompting into a pipe that will never answer.
 
 Extra arguments go straight to the underlying tool — put them after `--` if they could be mistaken
 for one of `twcli`'s own flags:

@@ -12,33 +12,73 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from typing import Any, Optional, Sequence
 
 import click
 
 from ... import errors
-from ...client import Tileward, openai_base_url
+from ...client import openai_base_url
 from ...config import config_dir
+from ...resources.models import summarize
 from . import anthropic, claude_config, codex_config, opencode_config, responses
 from .proxy import Proxy
 
 
-def resolve_model(client: Tileward, requested: Optional[str]) -> str:
-    """`--model`, validated against what's actually served; else the account default.
+def _interactive(ctx: Any) -> bool:
+    """A human at a keyboard who can answer a prompt -- not a pipe, a script, or `--json`."""
+    return sys.stdin.isatty() and not ctx.out.as_json
 
-    Never a hardcoded fallback id — the served catalogue is data, not code (see
-    `resources/models.py`), so a literal here would eventually 404 quietly.
+
+def _pick_model(ctx: Any) -> str:
+    """No `--model` and no configured default: ask, rather than guess.
+
+    One served model needs no choice. More than one used to mean "silently take whichever the API
+    listed first" — exactly the kind of guess `resources/models.py` otherwise refuses to make, and
+    the reason `--model` chose the wrong model by default until now. Ask instead, when there is
+    someone to ask; a script or a pipe gets a clear error instead of a hang.
     """
-    if requested:
-        client.models.retrieve(requested)  # raises NotFoundError naming what IS served, if wrong
-        return requested
-    model = client.models.default()
-    if not model:
+    rows = ctx.client.models.list()
+    ids = [str(row.get("id")) for row in rows if row.get("id")]
+    if not ids:
         raise errors.ConfigError(
             "No model given and the served catalogue is empty. Pass --model, or check "
             "`twcli models list`."
         )
-    return model
+    if len(ids) == 1:
+        return ids[0]
+    if not _interactive(ctx):
+        raise errors.ConfigError(
+            "Multiple models are served and no default is configured. Pass --model, set one "
+            "with `twcli config set model <id>`, or run this from a terminal to choose "
+            "interactively."
+        )
+    ctx.out.table(
+        [{"#": i, **summarize(row)} for i, row in enumerate(rows, start=1)],
+        ["#", "id", "context_len", "price_per_mtoken_usd", "compression_ratio"],
+        title="Available models",
+        headers={"price_per_mtoken_usd": "USD / Mtoken", "context_len": "context"},
+    )
+    choice = click.prompt(f"Pick a model [1-{len(ids)}]", type=click.IntRange(1, len(ids)))
+    picked = ids[choice - 1]
+    ctx.out.note(f"Set a default to skip this next time: twcli config set model {picked}")
+    return picked
+
+
+def resolve_model(ctx: Any, requested: Optional[str]) -> str:
+    """`--model`, validated against what's actually served; else the configured default; else,
+    when more than one model is served, ask which one to use.
+
+    Never a hardcoded fallback id — the served catalogue is data, not code (see
+    `resources/models.py`), so a literal here would eventually 404 quietly.
+    """
+    client = ctx.client
+    if requested:
+        client.models.retrieve(requested)  # raises NotFoundError naming what IS served, if wrong
+        return requested
+    if client.default_model:
+        return str(client.default_model)
+    return _pick_model(ctx)
 
 
 def _binary(name: str) -> str:
@@ -90,15 +130,10 @@ def _declare_context_window(ctx: Any, model_id: str, env: dict) -> None:
 
 
 def launch_claude(
-    ctx: Any,
-    model: Optional[str],
-    fast_model: Optional[str],
-    port: int,
-    args: Sequence[str],
-    compaction_hooks: bool = True,
+    ctx: Any, model: Optional[str], fast_model: Optional[str], port: int, args: Sequence[str], compaction_hooks: bool
 ) -> int:
     binary = _binary("claude")
-    resolved = resolve_model(ctx.client, model)
+    resolved = resolve_model(ctx, model)
     env = dict(os.environ)
     # Before the proxy starts: a catalogue failure here must not strand a running proxy thread.
     _declare_context_window(ctx, resolved, env)
@@ -116,7 +151,7 @@ def launch_claude(
         client=ctx.client,
         adapter=anthropic,
         model=resolved,
-        routes={"/v1/messages": "messages", "/v1/messages/count_tokens": "count_tokens"},
+        routes={"/v1/messages": "messages", "/v1/messages/count_tokens": "count_tokens", "/v1/models": "models"},
         port=port,
     )
     proxy.start()
@@ -141,7 +176,7 @@ def launch_claude(
 
 def launch_codex(ctx: Any, model: Optional[str], port: int, args: Sequence[str]) -> int:
     binary = _binary("codex")
-    resolved = resolve_model(ctx.client, model)
+    resolved = resolve_model(ctx, model)
     proxy = Proxy(
         client=ctx.client,
         adapter=responses,
@@ -166,9 +201,10 @@ def launch_codex(ctx: Any, model: Optional[str], port: int, args: Sequence[str])
         config_path.unlink(missing_ok=True)
 
 
-def launch_opencode(ctx: Any, model: Optional[str], args: Sequence[str]) -> int:
-    binary = _binary("opencode")
-    resolved = resolve_model(ctx.client, model)
+def launch_opencode(
+    ctx: Any, model: Optional[str], args: Sequence[str], *, desktop: bool = False
+) -> int:
+    resolved = resolve_model(ctx, model)
     model_ids = ctx.client.models.ids() or [resolved]
     base_url = openai_base_url(ctx.client.base_url)
     path, applied = opencode_config.merge(base_url, model_ids)
@@ -183,6 +219,17 @@ def launch_opencode(ctx: Any, model: Optional[str], args: Sequence[str]) -> int:
     env = dict(os.environ)
     if not env.get("TILEWARD_API_KEY") and ctx.client.api_key:
         env["TILEWARD_API_KEY"] = ctx.client.api_key
+
+    if desktop:
+        if sys.platform != "darwin":
+            raise click.ClickException(
+                "OpenCode Desktop is macOS-only. Use `twcli launch opencode` without --desktop "
+                "for the terminal version on Linux / WSL."
+            )
+        proc = subprocess.Popen(["open", "-a", "ai.opencode.desktop"], env=env)
+        return proc.wait()
+
+    binary = _binary("opencode")
     return _run_child(binary, args, env)
 
 

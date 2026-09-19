@@ -37,19 +37,23 @@ class FakePopen:
         return 0
 
 
-def run(args, env=None, which=None, monkeypatch=None):
+def run(args, env=None, which=None, monkeypatch=None, input=None):
     base = {
         "TILEWARD_BASE_URL": "https://api.test",
         "TILEWARD_CONSOLE_URL": "https://console.test",
         "TILEWARD_CONTEXT_URL": "https://context.test",
         "TILEWARD_API_KEY": "tw_live_testkey",
+        # Most of these tests aren't about which model gets picked -- give them an unambiguous
+        # default so `serve_models()`'s two rows don't trip the interactive picker. Tests that
+        # exercise the picker itself override this back to "" (unset).
+        "TILEWARD_MODEL": "tileward-35b-a3b",
     }
     base.update(env or {})
     monkeypatch.setattr("tileward.cli.agents.runner.subprocess.Popen", FakePopen)
     monkeypatch.setattr(
         "tileward.cli.agents.runner.shutil.which", lambda name: which or f"/usr/bin/{name}"
     )
-    return CliRunner().invoke(cli, args, env=base, catch_exceptions=False)
+    return CliRunner().invoke(cli, args, env=base, input=input, catch_exceptions=False)
 
 
 def serve_models():
@@ -62,12 +66,13 @@ def serve_models():
 
 
 @respx.mock
-def test_launch_claude_resolves_default_model_and_wires_the_proxy(isolated_config, monkeypatch):
+def test_launch_claude_resolves_configured_default_and_wires_the_proxy(
+    isolated_config, monkeypatch
+):
     serve_models()
     result = run(["launch", "claude"], monkeypatch=monkeypatch)
     assert result.exit_code == 0
     env = FakePopen.last_call["env"]
-    # the first served id, since no default model is configured for this profile
     assert env["ANTHROPIC_MODEL"] == "tileward-35b-a3b"
     assert env["ANTHROPIC_SMALL_FAST_MODEL"] == "tileward-35b-a3b"
     assert env["ANTHROPIC_BASE_URL"].startswith("http://127.0.0.1:")
@@ -84,6 +89,49 @@ def test_launch_claude_resolves_default_model_and_wires_the_proxy(isolated_confi
     assert claude_config_dir.name == "claude-launch"
     assert claude_config_dir.is_dir()
     assert str(isolated_config) in str(claude_config_dir)
+
+
+@respx.mock
+def test_launch_claude_auto_selects_the_only_served_model(isolated_config, monkeypatch):
+    respx.get("https://api.test/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "solo-model"}]})
+    )
+    result = run(["launch", "claude"], env={"TILEWARD_MODEL": ""}, monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert FakePopen.last_call["env"]["ANTHROPIC_MODEL"] == "solo-model"
+
+
+@respx.mock
+def test_launch_claude_with_multiple_models_and_no_default_fails_clearly_when_not_interactive(
+    isolated_config, monkeypatch
+):
+    """No tty to prompt on (a script, CI, a pipe) -- guessing which model to use is exactly the
+    trap this whole feature exists to avoid, so this must fail loudly instead of picking one."""
+    serve_models()
+    with pytest.raises(errors.ConfigError, match="Multiple models"):
+        run(["launch", "claude"], env={"TILEWARD_MODEL": ""}, monkeypatch=monkeypatch)
+
+
+@respx.mock
+def test_launch_claude_prompts_to_choose_when_multiple_models_and_no_default(
+    isolated_config, monkeypatch
+):
+    serve_models()
+    monkeypatch.setattr("tileward.cli.agents.runner._interactive", lambda ctx: True)
+    result = run(
+        ["launch", "claude"],
+        env={"TILEWARD_MODEL": ""},
+        monkeypatch=monkeypatch,
+        input="2\n",
+    )
+    assert result.exit_code == 0
+    assert "Available models" in result.output
+    assert "tileward-35b-a3b" in result.output
+    assert "gpt-oss-20b" in result.output
+    assert "Pick a model" in result.output
+    # the 2nd row, as typed at the prompt -- not the 1st, which the old code silently always used
+    assert FakePopen.last_call["env"]["ANTHROPIC_MODEL"] == "gpt-oss-20b"
+    assert "twcli config set model gpt-oss-20b" in result.output
 
 
 @respx.mock
@@ -311,3 +359,65 @@ def test_launch_opencode_leaves_unparsable_existing_config_untouched(
     assert result.exit_code == 0
     assert "// a comment" in config_path.read_text()  # untouched
     assert "isn't plain JSON" in result.output
+
+
+class FakeDesktopPopen:
+    """Records calls to `open -a ai.opencode.desktop` for desktop launch tests."""
+
+    last_call = None
+
+    def __init__(self, cmd, env=None, **kwargs):
+        FakeDesktopPopen.last_call = {"cmd": list(cmd), "env": dict(env or {}), "kwargs": kwargs}
+
+    def wait(self):
+        return 0
+
+
+def run_desktop(args, env=None, monkeypatch=None):
+    base = {
+        "TILEWARD_BASE_URL": "https://api.test",
+        "TILEWARD_CONSOLE_URL": "https://console.test",
+        "TILEWARD_CONTEXT_URL": "https://context.test",
+        "TILEWARD_API_KEY": "tw_live_testkey",
+        "TILEWARD_MODEL": "tileward-35b-a3b",
+    }
+    base.update(env or {})
+    monkeypatch.setattr("tileward.cli.agents.runner.subprocess.Popen", FakeDesktopPopen)
+    monkeypatch.setattr(
+        "tileward.cli.agents.runner.shutil.which", lambda name: f"/usr/bin/{name}"
+    )
+    return CliRunner().invoke(cli, args, env=base, catch_exceptions=False)
+
+
+@respx.mock
+def test_launch_opencode_desktop_merges_config_and_launches_desktop(
+    isolated_config, monkeypatch, tmp_path
+):
+    serve_models()
+    config_path = tmp_path / "opencode.json"
+    monkeypatch.setenv("OPENCODE_CONFIG", str(config_path))
+    monkeypatch.setattr("tileward.cli.agents.runner.sys.platform", "darwin")
+    result = run_desktop(["launch", "opencode", "--desktop"], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+
+    doc = json.loads(config_path.read_text())
+    provider = doc["provider"]["tileward"]
+    assert provider["npm"] == "@ai-sdk/openai-compatible"
+    assert provider["options"]["baseURL"] == "https://api.test/v1"
+    assert provider["options"]["apiKey"] == "{env:TILEWARD_API_KEY}"
+
+    assert FakeDesktopPopen.last_call["cmd"] == ["open", "-a", "ai.opencode.desktop"]
+    assert FakeDesktopPopen.last_call["env"]["TILEWARD_API_KEY"] == "tw_live_testkey"
+
+
+@respx.mock
+def test_launch_opencode_desktop_non_macos_raises_error(
+    isolated_config, monkeypatch, tmp_path
+):
+    serve_models()
+    config_path = tmp_path / "opencode.json"
+    monkeypatch.setenv("OPENCODE_CONFIG", str(config_path))
+    monkeypatch.setattr("tileward.cli.agents.runner.sys.platform", "linux")
+    result = run_desktop(["launch", "opencode", "--desktop"], monkeypatch=monkeypatch)
+    assert result.exit_code != 0
+    assert "macOS-only" in result.output
