@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import secrets
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import ModuleType
 from typing import Any, Dict, Optional
@@ -29,6 +30,64 @@ from typing import Any, Dict, Optional
 from ... import errors
 from ...client import Tileward
 from ...resources.models import summarize
+
+# A coding agent resends its whole context every turn, so a launch's requests get large fast. When
+# the bytes of one are truncated on the hop between the Tileward gateway and the model host -- a
+# transient transport failure -- the model host's JSON parser rejects what arrived and the gateway
+# relays that as a 4xx. It reads like the caller's fault (a bad request), but twcli only ever sends
+# well-formed JSON, so an upstream "malformed JSON" verdict can only mean a body that did not arrive
+# whole. Left alone it ends the agent's session mid-task; retried, the same request almost always
+# goes straight through. These are JSON parsers' own words for "the input stopped early", matched
+# case-insensitively as a substring of the upstream error message.
+_TRUNCATION_SIGNATURES = (
+    "unterminated string",
+    "expecting value",
+    "expecting ',' delimiter",
+    "expecting ':' delimiter",
+    "expecting property name",
+    "extra data",
+    "invalid control character",
+    "eof while parsing",
+    "unexpected end",
+    "json decode",
+)
+
+# Transient upstream/gateway failures. `retry_5xx` is on ONLY for the streaming path: the SDK
+# transport already retries these statuses on the non-streaming path (see `_http.RETRY_STATUS`),
+# and retrying them here too would multiply the two budgets together; the streaming path retries
+# nothing on its own, so there the proxy is the only line of defence.
+_RETRYABLE_STATUS = frozenset({500, 502, 503, 504})
+
+_RETRY_BACKOFFS = (0.2, 0.6)  # two retries, three attempts in all
+
+
+def _is_retryable_backend_error(exc: Exception, retry_5xx: bool) -> bool:
+    status = getattr(exc, "status", None)
+    if retry_5xx and status in _RETRYABLE_STATUS:
+        return True
+    # A truncated request body is never retried by the transport (a 4xx reads as the caller's
+    # fault), so the proxy always owns this case -- on both paths, with no double-retry risk.
+    if isinstance(status, int) and 400 <= status < 500:
+        message = (getattr(exc, "message", "") or "").lower()
+        return any(sig in message for sig in _TRUNCATION_SIGNATURES)
+    return False
+
+
+def _with_backend_retry(call: Any, *, retry_5xx: bool) -> Any:
+    """Run `call()`, retrying a transient backend failure a couple of times before giving up.
+
+    `call` must open a FRESH upstream request each time and must not have written anything to the
+    client yet -- both proxy handlers force the first upstream byte before committing a response,
+    which is what keeps a retry here invisible to the agent on the other end.
+    """
+    for backoff in _RETRY_BACKOFFS:
+        try:
+            return call()
+        except errors.TilewardError as exc:
+            if not _is_retryable_backend_error(exc, retry_5xx):
+                raise
+            time.sleep(backoff)
+    return call()  # last attempt; its result or its exception is the caller's
 
 
 def _make_handler(
@@ -137,8 +196,11 @@ def _make_handler(
 
         def _handle_once(self, messages: Any, rest: Dict[str, Any]) -> None:
             try:
-                completion = client.chat.completions.create(
-                    messages, model=model, stream=False, **rest
+                completion = _with_backend_retry(
+                    lambda: client.chat.completions.create(
+                        messages, model=model, stream=False, **rest
+                    ),
+                    retry_5xx=False,  # the transport already retries 5xx on this path
                 )
             except errors.TilewardError as exc:
                 status, payload = adapter.error_body(exc)
@@ -147,13 +209,19 @@ def _make_handler(
             self._write_json(200, adapter.from_chat_response(completion, model=model))
 
         def _handle_stream(self, messages: Any, rest: Dict[str, Any]) -> None:
-            chunks = client.chat.completions.create(
-                messages, model=model, stream=True, stream_options={"include_usage": True}, **rest
-            )
-            # `chunks` is a lazy generator; force the first item before committing to 200 + SSE,
-            # so an upstream failure comes back as a real status code instead of a dead stream.
+            def _open():
+                chunks = client.chat.completions.create(
+                    messages, model=model, stream=True,
+                    stream_options={"include_usage": True}, **rest
+                )
+                # `chunks` is a lazy generator; force the first item before committing to 200 +
+                # SSE, so an upstream failure comes back as a real status code instead of a dead
+                # stream -- and so a retry re-opens the whole request rather than resuming a
+                # half-read one.
+                return chunks, next(chunks)
+
             try:
-                first = next(chunks)
+                chunks, first = _with_backend_retry(_open, retry_5xx=True)
             except errors.TilewardError as exc:
                 status, payload = adapter.error_body(exc)
                 self._write_json(status, payload)
