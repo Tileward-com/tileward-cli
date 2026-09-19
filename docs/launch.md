@@ -20,11 +20,11 @@ served:
 
 ```console
 $ twcli launch claude
-                        Available models
-#  id                    context  USD / Mtoken  compression ratio
-1  tileward-35b-a3b      262,144  0.75          2.8
-2  gpt-oss-20b           8,192    0.25          1
-3  Tileward-Qwen3.8-27b  262,144  0.75          1.79
+                          Available models
+#  id                        context  USD / Mtoken  compression ratio
+1  Tileward-Qwen3.6-35B-A3B  262,144  0.75          2.8
+2  gpt-oss-20b               8,192    0.25          1
+3  Tileward-Qwen3.8-27b      262,144  0.75          1.79
 Pick a model [1-3]:
 ```
 
@@ -75,7 +75,7 @@ key sitting in your shell can't silently take over and send the session to `api.
 instead.
 
 ```bash
-twcli launch claude --model tileward-35b-a3b --fast-model gpt-oss-20b
+twcli launch claude --model Tileward-Qwen3.6-35B-A3B --fast-model gpt-oss-20b
 ```
 
 **It also points `CLAUDE_CONFIG_DIR` at `<config dir>/claude-launch`, never your real
@@ -135,7 +135,7 @@ accepts JSONC, comments and all, which this can't safely rewrite — nothing is 
 block is printed for you to add by hand instead.
 
 ```bash
-twcli launch opencode --model tileward-35b-a3b
+twcli launch opencode --model Tileward-Qwen3.6-35B-A3B
 ```
 
 ## What you give up going through claude or codex
