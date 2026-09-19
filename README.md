@@ -32,10 +32,10 @@ $ twcli auth login
 $ twcli keys create --label laptop --save
 
 $ twcli models list
-id                    precision           context  USD / Mtoken  compression
-tileward-35b-a3b      W4A16 (Tileward)    262,144  1             2.8
-gpt-oss-20b           MXFP4 (as shipped)  8,192    0.2           1
-Tileward-Qwen3.8-27b  W4A16 (Tileward)    262,144  1             1.79
+id                        precision           context  USD / Mtoken  compression
+Tileward-Qwen3.6-35B-A3B  W4A16 (Tileward)    262,144  1             2.8
+gpt-oss-20b               MXFP4 (as shipped)  8,192    0.2           1
+Tileward-Qwen3.8-27b      W4A16 (Tileward)    262,144  1             1.79
 
 $ twcli chat "Say hello in one sentence."
 Hello there — good to meet you.
@@ -165,6 +165,9 @@ raises `GuardRefusal` when governance blocked the call, rather than returning an
 **Do not hardcode a model id.** The served catalogue is data, not code — ids appear, get repriced
 and get withdrawn without a release. `tw.models.list()` is the authority; leave `model` unset and
 the client asks.
+
+`Tileward-Qwen3.6-35B-A3B` also answers to `tileward-35b-a3b` and `Qwen3.6-35B-A3B-TW`, at the
+same rate.
 
 ### Governance
 
