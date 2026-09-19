@@ -10,6 +10,7 @@ import json
 import httpx
 
 from tileward.cli.agents import anthropic, responses
+from tileward.cli.agents import proxy as proxy_mod
 from tileward.cli.agents.proxy import Proxy
 from tileward.client import Tileward
 
@@ -350,5 +351,119 @@ def test_malformed_request_body_does_not_crash_the_proxy():
         )
         assert r.status_code == 200
         assert r.json()["type"] == "message"
+    finally:
+        proxy.stop()
+
+
+def test_once_retries_a_truncated_backend_body(monkeypatch):
+    """A backend that received a truncated request body answers 4xx with a JSON-decode message.
+    twcli only ever sends valid JSON, so that verdict is a transient transport failure, not the
+    caller's fault -- the proxy retries it instead of ending the session."""
+    monkeypatch.setattr(proxy_mod, "_RETRY_BACKOFFS", (0.0, 0.0))
+    state = {"n": 0}
+
+    def handler(request):
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(400, json={"error": {
+                "message": "Unterminated string starting at: line 1 column 9 (char 8)",
+                "type": "invalid_request_error", "code": None}})
+        return httpx.Response(200, json={
+            "choices": [{"finish_reason": "stop", "message": {"content": "ok"}}], "usage": {}})
+
+    proxy, calls = start_responses_proxy(handler)
+    try:
+        r = httpx.post(
+            f"{proxy.base_url}/v1/responses",
+            headers={"Authorization": f"Bearer {proxy.token}"},
+            json={"input": "hi"},
+        )
+        assert r.status_code == 200
+        assert r.json()["output"][0]["content"][0]["text"] == "ok"
+        assert len(calls) == 2  # failed once, retried, succeeded
+    finally:
+        proxy.stop()
+
+
+def test_stream_retries_a_truncated_backend_body(monkeypatch):
+    monkeypatch.setattr(proxy_mod, "_RETRY_BACKOFFS", (0.0, 0.0))
+    sse = (
+        b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'
+        b'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n'
+        b"data: [DONE]\n\n"
+    )
+    state = {"n": 0}
+
+    def handler(request):
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(400, json={"error": {
+                "message": "Unterminated string starting at: line 1 column 9 (char 8)"}})
+        return httpx.Response(200, content=sse, headers={"content-type": "text/event-stream"})
+
+    proxy, calls = start_responses_proxy(handler)
+    try:
+        with httpx.stream(
+            "POST",
+            f"{proxy.base_url}/v1/responses",
+            headers={"Authorization": f"Bearer {proxy.token}"},
+            json={"input": "hi", "stream": True},
+        ) as r:
+            assert r.status_code == 200
+            text = b"".join(r.iter_bytes()).decode("utf-8")
+        assert "Hi" in text  # the retried attempt streamed through
+        assert len(calls) == 2
+    finally:
+        proxy.stop()
+
+
+def test_a_genuine_client_4xx_is_surfaced_not_retried(monkeypatch):
+    """A real bad request -- an over-length prompt, say -- is the caller's to fix. Its 4xx has no
+    JSON-decode signature, so it is surfaced on the first try, never retried."""
+    monkeypatch.setattr(proxy_mod, "_RETRY_BACKOFFS", (0.0, 0.0))
+
+    def handler(request):
+        return httpx.Response(400, json={"error": {
+            "message": "This model's maximum context length is 262144 tokens.",
+            "type": "invalid_request_error", "code": "context_length_exceeded"}})
+
+    proxy, calls = start_responses_proxy(handler)
+    try:
+        r = httpx.post(
+            f"{proxy.base_url}/v1/responses",
+            headers={"Authorization": f"Bearer {proxy.token}"},
+            json={"input": "hi"},
+        )
+        assert r.status_code == 400
+        assert len(calls) == 1
+    finally:
+        proxy.stop()
+
+
+def test_stream_retries_a_transient_5xx(monkeypatch):
+    """The streaming path retries a transient upstream 5xx; the SDK transport carries its
+    RETRY_STATUS budget only on the non-streaming request() path, so here the proxy is the only
+    line of defence."""
+    monkeypatch.setattr(proxy_mod, "_RETRY_BACKOFFS", (0.0, 0.0))
+    sse = b'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\ndata: [DONE]\n\n'
+    state = {"n": 0}
+
+    def handler(request):
+        state["n"] += 1
+        if state["n"] == 1:
+            return httpx.Response(503, json={"error": {"message": "backend waking"}})
+        return httpx.Response(200, content=sse, headers={"content-type": "text/event-stream"})
+
+    proxy, calls = start_responses_proxy(handler)
+    try:
+        with httpx.stream(
+            "POST",
+            f"{proxy.base_url}/v1/responses",
+            headers={"Authorization": f"Bearer {proxy.token}"},
+            json={"input": "hi", "stream": True},
+        ) as r:
+            assert r.status_code == 200
+            b"".join(r.iter_bytes())
+        assert len(calls) == 2
     finally:
         proxy.stop()
