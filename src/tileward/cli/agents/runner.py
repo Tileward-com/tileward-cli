@@ -107,7 +107,7 @@ def _declare_context_window(ctx: Any, model_id: str, env: dict) -> None:
     An explicit `CLAUDE_CODE_MAX_CONTEXT_TOKENS` is the user's call and is left alone. A catalogue
     row with no usable context length leaves Claude Code on its own default.
     """
-    if claude_config.WINDOW_ENV in env:
+    if env.get(claude_config.WINDOW_ENV, "").strip():
         return
     try:
         context = claude_config.served_context(ctx.client.models.retrieve(model_id))
@@ -130,7 +130,12 @@ def _declare_context_window(ctx: Any, model_id: str, env: dict) -> None:
 
 
 def launch_claude(
-    ctx: Any, model: Optional[str], fast_model: Optional[str], port: int, args: Sequence[str], compaction_hooks: bool
+    ctx: Any,
+    model: Optional[str],
+    fast_model: Optional[str],
+    port: int,
+    args: Sequence[str],
+    compaction_hooks: bool,
 ) -> int:
     binary = _binary("claude")
     resolved = resolve_model(ctx, model)
@@ -151,7 +156,11 @@ def launch_claude(
         client=ctx.client,
         adapter=anthropic,
         model=resolved,
-        routes={"/v1/messages": "messages", "/v1/messages/count_tokens": "count_tokens", "/v1/models": "models"},
+        routes={
+            "/v1/messages": "messages",
+            "/v1/messages/count_tokens": "count_tokens",
+            "/v1/models": "models",
+        },
         port=port,
     )
     proxy.start()

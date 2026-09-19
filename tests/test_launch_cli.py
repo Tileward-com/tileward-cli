@@ -47,6 +47,10 @@ def run(args, env=None, which=None, monkeypatch=None, input=None):
         # default so `serve_models()`'s two rows don't trip the interactive picker. Tests that
         # exercise the picker itself override this back to "" (unset).
         "TILEWARD_MODEL": "tileward-35b-a3b",
+        # CliRunner merges env with os.environ, so parent-process Claude Code vars leak in.
+        # Delete them explicitly so tests asserting their absence don't flake.
+        "CLAUDE_CODE_MAX_CONTEXT_TOKENS": None,
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS": None,
     }
     base.update(env or {})
     monkeypatch.setattr("tileward.cli.agents.runner.subprocess.Popen", FakePopen)

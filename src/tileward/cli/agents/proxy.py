@@ -108,7 +108,9 @@ def _make_handler(
             if self.path.split("?", 1)[0] == "/v1/models":
                 self._handle_get_models()
             else:
-                self._write_json(404, {"error": {"message": f"twcli launch: no route for {self.path}"}})
+                self._write_json(404, {
+                    "error": {"message": f"twcli launch: no route for {self.path}"}
+                })
 
         def _handle_get_models(self) -> None:
             try:
