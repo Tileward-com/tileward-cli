@@ -30,8 +30,11 @@ class Account:
     def get(self) -> Dict[str, Any]:
         return self._client._transport.request("GET", ACCOUNT, auth="session")
 
-    def billing(self) -> Dict[str, Any]:
-        return self._client._transport.request("GET", BILLING, auth="session")
+    def billing(self, *, period: Optional[str] = None) -> Dict[str, Any]:
+        """Statement for a period. `all` is all time; anything else is the current month."""
+        return self._client._transport.request(
+            "GET", BILLING, params={"period": period}, auth="session"
+        )
 
     def audit(
         self,
@@ -75,8 +78,11 @@ class AsyncAccount:
     async def get(self) -> Dict[str, Any]:
         return await self._client._transport.request("GET", ACCOUNT, auth="session")
 
-    async def billing(self) -> Dict[str, Any]:
-        return await self._client._transport.request("GET", BILLING, auth="session")
+    async def billing(self, *, period: Optional[str] = None) -> Dict[str, Any]:
+        """Statement for a period. `all` is all time; anything else is the current month."""
+        return await self._client._transport.request(
+            "GET", BILLING, params={"period": period}, auth="session"
+        )
 
     async def audit(
         self,
