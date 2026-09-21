@@ -26,7 +26,7 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The floor and the ceiling of what pyproject claims. A package that says 3.9+ and is only
       # ever run on 3.12 is claiming something nobody checks. The last version listed is the
       # default `python`, which runs every step below that is not tied to one interpreter.
