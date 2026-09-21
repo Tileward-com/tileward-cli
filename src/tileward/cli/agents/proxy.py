@@ -31,7 +31,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import ModuleType
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import voluptuous as vol
 
@@ -114,9 +114,17 @@ def _with_backend_retry(call: Any, *, retry_5xx: bool) -> Any:
 
 
 def _make_handler(
-    *, client: Tileward, adapter: ModuleType, model: str, token: str, routes: Dict[str, str]
+    *,
+    client: Tileward,
+    model: str,
+    token: str,
+    adapters: Dict[str, Tuple[str, ModuleType]],
 ) -> type:
-    """Build a handler class closed over this launch's client/adapter/token/routes.
+    """Build a handler class closed over this launch's client/token and its routes.
+
+    `adapters` maps each path to its route name and the adapter that speaks that path's protocol,
+    so one port can serve more than one: Codex's Responses API and opencode's chat completions
+    side by side.
 
     A class rather than an instance: `ThreadingHTTPServer` instantiates the handler itself, once
     per connection, so per-launch state has to live in the closure instead of `__init__` args.
@@ -146,7 +154,7 @@ def _make_handler(
             self.close_connection = True
             self.wfile.write(body)
 
-        def _read_body(self) -> Dict[str, Any]:
+        def _read_body(self, adapter: ModuleType) -> Dict[str, Any]:
             """The request body as a dict of the shape the adapter reads, or an `APIError` naming
             what is wrong with it. Nothing is read past a Content-Length that is not believable."""
             try:
@@ -178,11 +186,12 @@ def _make_handler(
                 raise errors.APIError(message, status=400) from None
 
         def do_POST(self) -> None:  # noqa: N802 - required name in BaseHTTPRequestHandler
-            route = routes.get(self.path.split("?", 1)[0])
-            if route is None:
+            entry = adapters.get(self.path.split("?", 1)[0])
+            if entry is None:
                 msg = f"twcli launch: no route for {self.path}"
                 self._write_json(404, {"error": {"message": msg}})
                 return
+            route, adapter = entry
             if not self._authorized():
                 status, payload = adapter.error_body(
                     errors.AuthenticationError("Bad or missing local proxy token.", status=401)
@@ -191,7 +200,7 @@ def _make_handler(
                 return
 
             try:
-                body = self._read_body()
+                body = self._read_body(adapter)
             except errors.APIError as exc:
                 status, payload = adapter.error_body(exc)
                 self._write_json(status, payload)
@@ -209,9 +218,9 @@ def _make_handler(
             messages = chat_body.pop("messages")
             stream = bool(chat_body.pop("stream", False))
             if stream:
-                self._handle_stream(messages, chat_body)
+                self._handle_stream(adapter, messages, chat_body)
             else:
-                self._handle_once(messages, chat_body)
+                self._handle_once(adapter, messages, chat_body)
 
         def do_GET(self) -> None:  # noqa: N802 - required name in BaseHTTPRequestHandler
             if self.path.split("?", 1)[0] == "/v1/models":
@@ -244,7 +253,7 @@ def _make_handler(
                 },
             )
 
-        def _handle_once(self, messages: Any, rest: Dict[str, Any]) -> None:
+        def _handle_once(self, adapter: ModuleType, messages: Any, rest: Dict[str, Any]) -> None:
             try:
                 completion = _with_backend_retry(
                     lambda: client.chat.completions.create(
@@ -258,7 +267,9 @@ def _make_handler(
                 return
             self._write_json(200, adapter.from_chat_response(completion, model=model))
 
-        def _handle_stream(self, messages: Any, rest: Dict[str, Any]) -> None:
+        def _handle_stream(
+            self, adapter: ModuleType, messages: Any, rest: Dict[str, Any]
+        ) -> None:
             def _open():
                 chunks = client.chat.completions.create(
                     messages, model=model, stream=True,
@@ -321,13 +332,16 @@ class Proxy:
         routes: Dict[str, str],
         port: int = 0,
         token: Optional[str] = None,
+        extra_routes: Optional[Dict[str, Tuple[str, ModuleType]]] = None,
     ) -> None:
         # A launch mints its own. A supervisor that has already written the token into a desktop
         # app's config passes it in, so the proxy can restart without the app losing access.
         self.token = token or secrets.token_urlsafe(24)
-        handler = _make_handler(
-            client=client, adapter=adapter, model=model, token=self.token, routes=routes
-        )
+        adapters: Dict[str, Tuple[str, ModuleType]] = {
+            path: (route, adapter) for path, route in routes.items()
+        }
+        adapters.update(extra_routes or {})
+        handler = _make_handler(client=client, model=model, token=self.token, adapters=adapters)
         self._httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
         self._thread: Optional[threading.Thread] = None
 
