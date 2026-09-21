@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import threading
 
@@ -123,3 +124,51 @@ def test_the_port_must_be_a_real_one(tmp_path, port):
         cli, ["proxy", "serve", "--port", port, "--token-file", str(token)], env=ENV
     )
     assert result.exit_code == 2
+
+
+def test_serve_exits_when_the_process_that_started_it_dies(tmp_path):
+    """A supervisor that crashes cannot stop its proxy. The proxy must notice and stop itself,
+    or it holds the port and the supervisor's next launch can never bind it."""
+    import subprocess
+    import sys
+    import time
+
+    token = tmp_path / "token"
+    token.write_text("t")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    pid_file = tmp_path / "serve.pid"
+    # A parent that starts `twcli proxy serve` and then dies without stopping it.
+    parent = subprocess.run(
+        [sys.executable, "-c", f"""
+import os, subprocess, sys, time
+env = dict(os.environ, TILEWARD_API_KEY="tw_live_testkey", TILEWARD_BASE_URL="https://api.test",
+           TILEWARD_MODEL="m")  # a default resolves with no network call
+child = subprocess.Popen(
+    [sys.executable, "-c", "import sys; from tileward.cli.main import main; sys.exit(main())",
+     "proxy", "serve", "--port", "{port}", "--token-file", "{token}"],
+    env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+open("{pid_file}", "w").write(str(child.pid))
+import socket
+for _ in range(200):
+    try:
+        socket.create_connection(("127.0.0.1", {port}), 0.1).close()
+        sys.exit(0)  # serving: now die without stopping it
+    except OSError:
+        time.sleep(0.05)
+sys.exit(1)  # never served, so this test would prove nothing
+"""],
+        timeout=30,
+    )
+    assert parent.returncode == 0, "serve never started listening"
+    child_pid = int(pid_file.read_text())
+    for _ in range(100):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.1)
+    else:
+        os.kill(child_pid, 9)
+        raise AssertionError("serve outlived the process that started it")
