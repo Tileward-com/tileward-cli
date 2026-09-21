@@ -24,7 +24,9 @@ background metadata poll gets a clean response instead of a 501 error.
 from __future__ import annotations
 
 import json
+import os
 import secrets
+import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -318,8 +320,11 @@ class Proxy:
         model: str,
         routes: Dict[str, str],
         port: int = 0,
+        token: Optional[str] = None,
     ) -> None:
-        self.token = secrets.token_urlsafe(24)
+        # A launch mints its own. A supervisor that has already written the token into a desktop
+        # app's config passes it in, so the proxy can restart without the app losing access.
+        self.token = token or secrets.token_urlsafe(24)
         handler = _make_handler(
             client=client, adapter=adapter, model=model, token=self.token, routes=routes
         )
@@ -343,3 +348,37 @@ class Proxy:
         self._httpd.server_close()
         if self._thread is not None:
             self._thread.join(timeout=5)
+
+
+def run_until_stopped(
+    proxy: Proxy,
+    on_ready: Any,
+    stop: Optional[threading.Event] = None,
+    watch_parent: bool = True,
+) -> None:
+    """Start `proxy`, then block until SIGTERM, SIGINT, `stop`, or its parent exiting.
+
+    Watching the parent is what keeps a supervisor's crash from leaving an orphan: a desktop app
+    that is force-quit cannot stop its proxy, and an orphan would hold the port so the app's next
+    launch could never bind it. When the process that started this one goes away, this one is
+    reparented and its parent pid changes, so it stops too.
+    """
+    stop = stop or threading.Event()
+    if threading.current_thread() is threading.main_thread():
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(sig, lambda *_: stop.set())
+    if watch_parent:
+        parent = os.getppid()
+
+        def watch() -> None:
+            while not stop.wait(1.0):
+                if os.getppid() != parent:
+                    stop.set()
+
+        threading.Thread(target=watch, daemon=True).start()
+    proxy.start()
+    on_ready()
+    try:
+        stop.wait()
+    finally:
+        proxy.stop()

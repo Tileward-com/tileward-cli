@@ -46,6 +46,7 @@ twcli context recall --help
 | `twcli account audit` | request history, metadata only |
 | `twcli account savings` | what Context has saved |
 | `twcli account billing` | allowance meters, spend, and what Context saved |
+| `twcli proxy serve` | run the local proxy a desktop app talks to |
 | `twcli config show` | what this profile resolves to |
 | `twcli config set` | set a value on this profile |
 | `twcli config unset` | remove a value, falling back to the default |
