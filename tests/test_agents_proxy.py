@@ -5,9 +5,11 @@ intercepts this file's own calls to the local proxy too)."""
 
 from __future__ import annotations
 
+import http.client
 import json
 
 import httpx
+import pytest
 
 from tileward.cli.agents import anthropic, responses
 from tileward.cli.agents import proxy as proxy_mod
@@ -52,6 +54,22 @@ def start_responses_proxy(handler):
     )
     proxy.start()
     return proxy, calls
+
+
+def raw_post(proxy, path, headers, body=b""):
+    """POST with the headers exactly as given. httpx will not send an invalid Content-Length, and
+    the timeout makes a proxy that hangs on one fail this test instead of stalling the suite."""
+    conn = http.client.HTTPConnection("127.0.0.1", proxy.port, timeout=5)
+    try:
+        conn.putrequest("POST", path)
+        conn.putheader("Authorization", f"Bearer {proxy.token}")
+        for name, value in headers.items():
+            conn.putheader(name, value)
+        conn.endheaders(body)
+        response = conn.getresponse()
+        return response.status, json.loads(response.read())
+    finally:
+        conn.close()
 
 
 def never_called(request: httpx.Request) -> httpx.Response:
@@ -332,25 +350,148 @@ def test_responses_proxy_mid_stream_failure_sends_a_response_failed_event():
         proxy.stop()
 
 
-def test_malformed_request_body_does_not_crash_the_proxy():
-    """An unparsable body decodes to `{}`, a valid empty Messages request, rather than crashing
-    `do_POST`."""
+def test_a_body_that_is_not_json_is_refused_before_any_outbound_call():
+    proxy, calls = start_anthropic_proxy(never_called)
+    try:
+        status, payload = raw_post(proxy, "/v1/messages", {"Content-Length": "8"}, b"not json")
+        assert status == 400
+        assert payload["error"]["type"] == "invalid_request_error"
+        assert "not valid JSON" in payload["error"]["message"]
+        assert calls == []
+    finally:
+        proxy.stop()
 
-    def handler(request):
-        return httpx.Response(
-            200,
-            json={"choices": [{"finish_reason": "stop", "message": {"content": ""}}], "usage": {}},
-        )
 
-    proxy, _calls = start_anthropic_proxy(handler)
+@pytest.mark.parametrize(
+    "body",
+    [b"[]", b'"text"', b"5", b"null", b"", b"[" * 100_000],
+    ids=["array", "string", "number", "null", "empty", "nested-too-deep"],
+)
+def test_a_body_that_is_not_a_json_object_is_refused(body):
+    proxy, calls = start_anthropic_proxy(never_called)
+    try:
+        status, payload = raw_post(proxy, "/v1/messages", {"Content-Length": str(len(body))}, body)
+        assert status == 400
+        assert payload["error"]["type"] == "invalid_request_error"
+        assert calls == []
+    finally:
+        proxy.stop()
+
+
+@pytest.mark.parametrize("length", ["abc", "-1", "1.5", "1e3", "+5", "1_0", "0x10", ""])
+def test_a_content_length_that_is_not_a_whole_number_is_refused(length):
+    proxy, calls = start_anthropic_proxy(never_called)
+    try:
+        status, payload = raw_post(proxy, "/v1/messages", {"Content-Length": length}, b"{}")
+        assert status == 400
+        assert "Content-Length" in payload["error"]["message"]
+        assert calls == []
+    finally:
+        proxy.stop()
+
+
+def test_a_content_length_beyond_the_limit_is_refused_without_reading_it():
+    proxy, calls = start_anthropic_proxy(never_called)
+    try:
+        status, payload = raw_post(proxy, "/v1/messages", {"Content-Length": str(2**40)})
+        assert status == 413
+        assert payload["error"]["type"] == "invalid_request_error"
+        assert calls == []
+    finally:
+        proxy.stop()
+
+
+@pytest.mark.parametrize("path", ["/v1/messages", "/v1/messages/count_tokens"])
+@pytest.mark.parametrize(
+    ("body", "where"),
+    [
+        ({"messages": 5}, "messages"),
+        ({"messages": ["x"]}, "messages[0]"),
+        ({"messages": [{"role": "user", "content": 5}]}, "messages[0].content"),
+        ({"system": 5}, "system"),
+        ({"tools": 5}, "tools"),
+        ({"stream": "false"}, "stream"),
+    ],
+    ids=["messages", "message", "content", "system", "tools", "stream"],
+)
+def test_a_messages_request_of_the_wrong_shape_is_refused_naming_the_field(path, body, where):
+    proxy, calls = start_anthropic_proxy(never_called)
+    try:
+        r = httpx.post(f"{proxy.base_url}{path}", headers={"x-api-key": proxy.token}, json=body)
+        assert r.status_code == 400
+        assert r.json()["type"] == "error"
+        assert r.json()["error"]["type"] == "invalid_request_error"
+        assert where in r.json()["error"]["message"]
+        assert calls == []
+    finally:
+        proxy.stop()
+
+
+@pytest.mark.parametrize(
+    ("body", "where"),
+    [
+        ({"input": 5}, "input"),
+        ({"instructions": 5}, "instructions"),
+        ({"tools": 5}, "tools"),
+        ({"stream": "false"}, "stream"),
+    ],
+    ids=["input", "instructions", "tools", "stream"],
+)
+def test_a_responses_request_of_the_wrong_shape_is_refused_naming_the_field(body, where):
+    proxy, calls = start_responses_proxy(never_called)
     try:
         r = httpx.post(
-            f"{proxy.base_url}/v1/messages",
-            headers={"Authorization": f"Bearer {proxy.token}", "Content-Type": "application/json"},
-            content=b"not json",
+            f"{proxy.base_url}/v1/responses",
+            headers={"Authorization": f"Bearer {proxy.token}"},
+            json=body,
         )
-        assert r.status_code == 200
-        assert r.json()["type"] == "message"
+        assert r.status_code == 400
+        assert r.json()["error"]["type"] == "invalid_request_error"
+        assert where in r.json()["error"]["message"]
+        assert calls == []
+    finally:
+        proxy.stop()
+
+
+def test_shapes_real_clients_send_still_pass_validation():
+    """Only the shape the translators index into is checked. Everything else a client sends, and
+    the nulls some send for fields they leave unset, rides along untouched."""
+
+    def handler(request):
+        choice = {"finish_reason": "stop", "message": {"content": "ok"}}
+        return httpx.Response(200, json={"choices": [choice], "usage": {}})
+
+    full = {
+        "model": "claude-sonnet",
+        "max_tokens": 64,
+        "system": [{"type": "text", "text": "be brief", "cache_control": {"type": "ephemeral"}}],
+        "messages": [
+            {"role": "user", "content": [{"type": "text", "text": "hi"}]},
+            {
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "t1", "name": "ls", "input": {}}],
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "a.txt"}],
+            },
+            {"role": "user", "content": None, "name": "an extra key"},
+        ],
+        "tools": [{"name": "ls", "input_schema": {"type": "object"}}],
+        "tool_choice": {"type": "auto"},
+        "thinking": {"type": "enabled", "budget_tokens": 1024},
+        "metadata": {"user_id": "u"},
+    }
+    unset = {"system": None, "messages": None, "tools": None, "stream": None}
+
+    proxy, calls = start_anthropic_proxy(handler)
+    try:
+        for body in (full, unset):
+            r = httpx.post(
+                f"{proxy.base_url}/v1/messages", headers={"x-api-key": proxy.token}, json=body
+            )
+            assert r.status_code == 200, r.text
+        assert len(calls) == 2
     finally:
         proxy.stop()
 

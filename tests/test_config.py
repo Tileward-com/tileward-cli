@@ -4,7 +4,10 @@ import json
 import os
 import stat
 
+import pytest
+
 from tileward.config import DEFAULT_BASE_URL, Config, fingerprint
+from tileward.errors import ConfigError
 
 
 def test_defaults_when_nothing_is_stored(isolated_config):
@@ -12,6 +15,23 @@ def test_defaults_when_nothing_is_stored(isolated_config):
     assert cfg.base_url == DEFAULT_BASE_URL
     assert cfg.api_key is None
     assert cfg.profile == "default"
+
+
+@pytest.mark.parametrize("filename", ["config.json", "credentials.json"])
+def test_a_file_that_is_not_json_is_an_error_naming_the_file(isolated_config, filename):
+    isolated_config.mkdir(parents=True)
+    (isolated_config / filename).write_text("{not json")
+    with pytest.raises(ConfigError, match=filename):
+        Config()
+
+
+@pytest.mark.parametrize("filename", ["config.json", "credentials.json"])
+def test_a_file_that_is_not_a_json_object_is_ignored(isolated_config, filename):
+    isolated_config.mkdir(parents=True)
+    (isolated_config / filename).write_text("[1, 2]")
+    cfg = Config()
+    assert cfg.base_url == DEFAULT_BASE_URL
+    assert cfg.api_key is None
 
 
 def test_environment_beats_the_file(isolated_config, monkeypatch):

@@ -9,7 +9,7 @@ over the same client. Everything one can do, the other can do.
 pip install tileward
 ```
 
-Python 3.9 or newer. Three dependencies: `httpx`, `click`, `rich`.
+Python 3.9 or newer. Four dependencies: `httpx`, `click`, `rich`, `voluptuous`.
 
 ## What it covers
 

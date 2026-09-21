@@ -77,7 +77,7 @@ pip install tileward          # or: uv pip install tileward
 twcli --version
 ```
 
-Python 3.9+. Three dependencies: `httpx`, `click`, `rich`.
+Python 3.9+. Four dependencies: `httpx`, `click`, `rich`, `voluptuous`.
 
 ## Getting a key
 

@@ -26,14 +26,15 @@ classifiers = [
   "Typing :: Typed",
 ]
 
-# httpx is the only hard dependency of the LIBRARY. click and rich are here rather than in an
-# extra because `pip install tileward` installs a console script, and a console script that
-# ImportErrors on first run is worse than three dependencies. Nothing under `tileward.` imports
-# them outside `tileward.cli`, so embedding the library never touches them.
+# httpx is the only hard dependency of the LIBRARY. click, rich and voluptuous are here rather
+# than in an extra because `pip install tileward` installs a console script, and a console script
+# that ImportErrors on first run is worse than four dependencies. Nothing under `tileward.`
+# imports them outside `tileward.cli`, so embedding the library never touches them.
 dependencies = [
   "httpx>=0.24,<1",
   "click>=8.0",
   "rich>=13.0",
+  "voluptuous>=0.14.1,<1",
 ]
 
 [project.optional-dependencies]
