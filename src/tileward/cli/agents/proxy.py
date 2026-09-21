@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import signal
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -318,8 +319,11 @@ class Proxy:
         model: str,
         routes: Dict[str, str],
         port: int = 0,
+        token: Optional[str] = None,
     ) -> None:
-        self.token = secrets.token_urlsafe(24)
+        # A launch mints its own. A supervisor that has already written the token into a desktop
+        # app's config passes it in, so the proxy can restart without the app losing access.
+        self.token = token or secrets.token_urlsafe(24)
         handler = _make_handler(
             client=client, adapter=adapter, model=model, token=self.token, routes=routes
         )
@@ -343,3 +347,17 @@ class Proxy:
         self._httpd.server_close()
         if self._thread is not None:
             self._thread.join(timeout=5)
+
+
+def run_until_stopped(proxy: Proxy, on_ready: Any, stop: Optional[threading.Event] = None) -> None:
+    """Start `proxy`, then block until SIGTERM, SIGINT or `stop` is set, and shut it down."""
+    stop = stop or threading.Event()
+    if threading.current_thread() is threading.main_thread():
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(sig, lambda *_: stop.set())
+    proxy.start()
+    on_ready()
+    try:
+        stop.wait()
+    finally:
+        proxy.stop()
