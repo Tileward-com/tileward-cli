@@ -5,24 +5,88 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to a pull request makes the run for its older commit moot. Runs on main are never
+  # cancelled: every commit there keeps a result of its own.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  # One job rather than one per concern. Each check here is seconds to a minute of work, and every
+  # job pays for its own runner start and checkout, so splitting them multiplied the builds per
+  # push without making any check faster. Every step after the first carries `!cancelled()`, so one
+  # push still reports every failure instead of stopping at the first.
+  checks:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The floor and the ceiling of what pyproject claims. A package that says 3.9+ and is only
-        # ever run on 3.12 is claiming something nobody checks.
-        python-version: ["3.9", "3.13"]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
+      # The floor and the ceiling of what pyproject claims. A package that says 3.9+ and is only
+      # ever run on 3.12 is claiming something nobody checks. The last version listed is the
+      # default `python`, which runs every step below that is not tied to one interpreter.
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: pip install -e ".[dev]"
-      - run: pytest -q
-      - run: ruff check src tests
+          python-version: |
+            3.9
+            3.13
+
+      - name: test (3.13)
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m pytest -q
+      - name: test (3.9)
+        if: ${{ !cancelled() }}
+        run: |
+          python3.9 -m pip install -e ".[dev]"
+          python3.9 -m pytest -q
+
+      # Lint and the type check target one version each; running them per interpreter would report
+      # the same result twice.
+      - name: ruff
+        if: ${{ !cancelled() }}
+        run: python -m ruff check src tests
       - name: mypy
-        # The type check targets one version; running it twice would report the same result twice.
-        if: matrix.python-version == '3.13'
-        run: mypy src/tileward
+        if: ${{ !cancelled() }}
+        run: python -m mypy src/tileward
+
+      # An editable install freezes as a VCS line for the project itself; audit what it depends on.
+      - name: Freeze dependencies
+        if: ${{ !cancelled() }}
+        run: python -m pip freeze --exclude-editable > .requirements.txt
+      - name: pip-audit
+        if: ${{ !cancelled() }}
+        # --strict: a dependency that cannot be audited fails the step instead of passing unchecked.
+        run: pipx run pip-audit -r .requirements.txt --no-deps --disable-pip --strict
+
+      - name: semgrep
+        # Findings are reported to code scanning rather than failing the build.
+        if: ${{ !cancelled() }}
+        run: >-
+          pipx run semgrep scan
+          --config p/python
+          --config r/python.lang.security
+          --metrics=off
+          --sarif-output=semgrep.sarif
+
+      - name: Upload SARIF results
+        # Pull requests from forks and from Dependabot run with a read-only token, which cannot upload.
+        if: >-
+          ${{
+            !cancelled()
+            && hashFiles('semgrep.sarif') != ''
+            && (github.event_name == 'push'
+              || (github.event.pull_request.head.repo.full_name == github.repository
+                && github.actor != 'dependabot[bot]'))
+          }}
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          # Named rather than derived from the workflow and job, so the alerts this scan has already
+          # raised keep updating instead of being left open under a category nothing uploads to.
+          category: .github/workflows/sca.yml:security
