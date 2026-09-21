@@ -107,6 +107,45 @@ def usage(ctx: Ctx) -> None:
     )
 
 
+@account_group.command("billing")
+@click.option(
+    "--period",
+    type=click.Choice(["month", "all"]),
+    default="month",
+    help="Current calendar month, or all time.",
+)
+@common()
+@pass_ctx
+def billing(ctx: Ctx, period: str) -> None:
+    """Statement for a period: allowance meters, spend, and what Context saved.
+
+    \b
+      twcli account billing
+      twcli --json account billing --period all
+    """
+    ctx.require_session()
+    payload = ctx.client.account.billing(period=period)
+    ctx.emit(payload)
+    if ctx.out.as_json:
+        return
+    tokens = ((payload.get("allowance_status") or {}).get("completion_tokens") or {})
+    context = payload.get("context") or {}
+    included = tokens.get("included")
+    ctx.out.pairs(
+        {
+            "Plan": payload.get("plan"),
+            "Balance (USD)": _usd(payload.get("balance_micros")),
+            "Completion tokens": tokens.get("used"),
+            "Included": "unlimited" if tokens.get("unlimited") else included,
+            "Overage": tokens.get("overage"),
+            "Context recalls": context.get("recalls"),
+            "Tokens saved by Context": context.get("saved_tokens"),
+            "Saved (USD)": _usd(context.get("saved_cost_micros")),
+        },
+        title=f"billing, {period}",
+    )
+
+
 @account_group.command("audit")
 @click.option("--key-id", type=int, help="Only requests made with this key.")
 @click.option(
