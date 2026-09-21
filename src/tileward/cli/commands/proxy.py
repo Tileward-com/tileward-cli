@@ -12,7 +12,7 @@ from typing import Optional
 
 import click
 
-from ..agents import responses, runner
+from ..agents import chat, responses, runner
 from ..agents.proxy import Proxy, run_until_stopped
 from ..main import Ctx, common, pass_ctx
 
@@ -34,7 +34,10 @@ def proxy_group() -> None:
 @common()
 @pass_ctx
 def serve(ctx: Ctx, port: int, token_file: Path, model: Optional[str]) -> None:
-    """Serve the OpenAI Responses API on 127.0.0.1 until stopped.
+    """Serve the OpenAI Responses and chat completions APIs on 127.0.0.1 until stopped.
+
+    Responses is translated for Codex; chat completions is passed through, for clients that
+    already speak Tileward's own API and only need the proxy to hold the key.
 
     Runs until SIGTERM or SIGINT. The token comes from a file rather than an argument so it never
     shows in a process listing.
@@ -54,6 +57,7 @@ def serve(ctx: Ctx, port: int, token_file: Path, model: Optional[str]) -> None:
             routes={"/v1/responses": "responses"},
             port=port,
             token=token,
+            extra_routes={"/v1/chat/completions": ("chat", chat)},
         )
     except OSError as exc:
         raise click.ClickException(
