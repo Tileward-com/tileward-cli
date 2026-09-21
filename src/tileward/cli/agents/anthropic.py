@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+import voluptuous as vol
+
 from ._util import new_id, safe_json_loads, text_from_blocks
 
 _STOP_REASON = {
@@ -27,6 +29,22 @@ _ERROR_TYPE = {
     404: "not_found_error",
     429: "rate_limit_error",
 }
+
+# The shape `to_chat_request` and `count_tokens` index into, checked before either runs. Only what
+# would raise, or quietly mean something else (a `"false"` that turns streaming on), is constrained:
+# Claude Code adds fields between releases and sends nulls for some it leaves unset, and all of
+# that passes through.
+_TEXT_OR_BLOCKS = vol.Any(str, list, None, msg="expected a string or a list")
+_MESSAGE = vol.Schema({vol.Optional("content"): _TEXT_OR_BLOCKS}, extra=vol.ALLOW_EXTRA)
+REQUEST_SCHEMA = vol.Schema(
+    {
+        vol.Optional("system"): _TEXT_OR_BLOCKS,
+        vol.Optional("messages"): vol.Any([_MESSAGE], None),
+        vol.Optional("tools"): vol.Any(list, None, msg="expected a list"),
+        vol.Optional("stream"): vol.Any(bool, None, msg="expected true or false"),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
 
 
 def to_chat_request(body: Dict[str, Any], *, model: str) -> Dict[str, Any]:

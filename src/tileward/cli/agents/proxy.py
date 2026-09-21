@@ -12,6 +12,10 @@ shape, so a third protocol is a third module, not a change here:
     error_body(exc: Exception) -> tuple[int, dict]
     stream_error_event(exc: Exception) -> bytes  # a mid-stream failure, after headers are sent
     count_tokens(body: dict) -> dict  # optional, routed only if `routes` maps a path to it
+    REQUEST_SCHEMA: voluptuous.Schema  # optional, checked against every request body first
+
+A request that is not a JSON object of the shape the adapter reads is answered with a 400 in the
+adapter's own error format, before anything is translated, counted or sent upstream.
 
 GET is handled only for `/v1/models`, which returns an OpenAI-compatible model list so Codex's
 background metadata poll gets a clean response instead of a 501 error.
@@ -26,6 +30,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import ModuleType
 from typing import Any, Dict, Optional
+
+import voluptuous as vol
 
 from ... import errors
 from ...client import Tileward
@@ -59,6 +65,21 @@ _TRUNCATION_SIGNATURES = (
 _RETRYABLE_STATUS = frozenset({500, 502, 503, 504})
 
 _RETRY_BACKOFFS = (0.2, 0.6)  # two retries, three attempts in all
+
+# The largest request body the proxy will read. A coding agent resends its whole context every turn,
+# so real requests run to megabytes; this only keeps a bogus Content-Length from sizing the read.
+_MAX_BODY_BYTES = 128 * 1024 * 1024
+
+# Digits only. `int()` also takes a sign, underscores and non-ASCII digits; HTTP takes none of them.
+_CONTENT_LENGTH = vol.Schema(vol.All(vol.Match(r"[0-9]{1,15}\Z"), vol.Coerce(int)))
+
+
+def _where(exc: vol.Invalid) -> str:
+    """`messages[2].content: ` -- where in the request the first problem is, or nothing."""
+    path = ""
+    for key in exc.path:
+        path += f"[{key}]" if isinstance(key, int) else (f".{key}" if path else str(key))
+    return f"{path}: " if path else ""
 
 
 def _is_retryable_backend_error(exc: Exception, retry_5xx: bool) -> bool:
@@ -123,14 +144,36 @@ def _make_handler(
             self.close_connection = True
             self.wfile.write(body)
 
-        def _read_json(self) -> Dict[str, Any]:
-            length = int(self.headers.get("Content-Length") or 0)
-            raw = self.rfile.read(length) if length else b""
+        def _read_body(self) -> Dict[str, Any]:
+            """The request body as a dict of the shape the adapter reads, or an `APIError` naming
+            what is wrong with it. Nothing is read past a Content-Length that is not believable."""
             try:
-                parsed = json.loads(raw) if raw else {}
+                length = _CONTENT_LENGTH(self.headers.get("Content-Length", "0"))
+            except vol.Invalid:
+                raise errors.APIError(
+                    "Content-Length must be a whole number of bytes.", status=400
+                ) from None
+            if length > _MAX_BODY_BYTES:
+                raise errors.APIError("Request body is too large.", status=413)
+            raw = self.rfile.read(length) if length else b""
+            if not raw:
+                raise errors.APIError("Request body is empty.", status=400)
+            try:
+                parsed = json.loads(raw)
+            except RecursionError:  # not a ValueError, so a deeply nested body needs its own arm
+                raise errors.APIError("Request body is nested too deeply.", status=400) from None
             except ValueError:
-                return {}
-            return parsed if isinstance(parsed, dict) else {}
+                raise errors.APIError("Request body is not valid JSON.", status=400) from None
+            if not isinstance(parsed, dict):
+                raise errors.APIError("Request body must be a JSON object.", status=400)
+            schema = getattr(adapter, "REQUEST_SCHEMA", None)
+            if schema is None:
+                return parsed
+            try:
+                return schema(parsed)
+            except vol.Invalid as exc:
+                message = f"Invalid request: {_where(exc)}{exc.error_message}."
+                raise errors.APIError(message, status=400) from None
 
         def do_POST(self) -> None:  # noqa: N802 - required name in BaseHTTPRequestHandler
             route = routes.get(self.path.split("?", 1)[0])
@@ -145,7 +188,12 @@ def _make_handler(
                 self._write_json(status, payload)
                 return
 
-            body = self._read_json()
+            try:
+                body = self._read_body()
+            except errors.APIError as exc:
+                status, payload = adapter.error_body(exc)
+                self._write_json(status, payload)
+                return
             if route == "count_tokens":
                 self._write_json(200, adapter.count_tokens(body))
                 return

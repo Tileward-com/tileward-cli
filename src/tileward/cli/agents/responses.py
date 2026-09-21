@@ -12,7 +12,21 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
+import voluptuous as vol
+
 from ._util import new_id, text_from_blocks
+
+# The shape `to_chat_request` and `count_tokens` index into, checked before either runs. See the
+# same-named schema in `anthropic.py` for what is and is not constrained.
+REQUEST_SCHEMA = vol.Schema(
+    {
+        vol.Optional("instructions"): vol.Any(str, None, msg="expected a string"),
+        vol.Optional("input"): vol.Any(str, list, None, msg="expected a string or a list"),
+        vol.Optional("tools"): vol.Any(list, None, msg="expected a list"),
+        vol.Optional("stream"): vol.Any(bool, None, msg="expected true or false"),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
 
 
 def to_chat_request(body: Dict[str, Any], *, model: str) -> Dict[str, Any]:
