@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import socket
 import threading
+import time
 
 import httpx
 import pytest
@@ -82,6 +83,46 @@ def test_run_until_stopped_serves_then_releases_the_port():
         client=offline_client(), adapter=responses, model="m", routes={}, port=port, token="t"
     )
     again._httpd.server_close()
+
+
+def test_the_proxy_answers_at_once_when_reverse_dns_is_slow(monkeypatch):
+    """The stdlib server looks up its own host name before it listens. Where reverse DNS is slow,
+    nothing can connect until that returns, and a supervisor waiting on the proxy gives up."""
+    lookups, unblock = [], threading.Event()
+
+    def unanswered_lookup(name=""):
+        lookups.append(name)
+        unblock.wait(30)
+        return name
+
+    monkeypatch.setattr(socket, "getfqdn", unanswered_lookup)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    stop = threading.Event()
+
+    def serve():
+        proxy = Proxy(
+            client=offline_client(), adapter=responses, model="m", routes={}, port=port, token="t"
+        )
+        run_until_stopped(proxy, lambda: None, stop, watch_parent=False)
+
+    worker = threading.Thread(target=serve)
+    worker.start()
+    try:
+        deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                answer = httpx.get(f"http://127.0.0.1:{port}/nope", timeout=1)
+                break
+            except httpx.TransportError:
+                assert time.monotonic() < deadline, f"not answering after 1s; lookups: {lookups}"
+                time.sleep(0.02)
+        assert answer.status_code == 404
+    finally:
+        unblock.set()
+        stop.set()
+        worker.join(5)
 
 
 def test_an_empty_token_file_is_refused(tmp_path, monkeypatch):

@@ -27,6 +27,7 @@ import json
 import os
 import secrets
 import signal
+import socketserver
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -320,6 +321,20 @@ def _make_handler(
     return Handler
 
 
+class _Server(ThreadingHTTPServer):
+    """`ThreadingHTTPServer` without the host name lookup its `server_bind` makes before listening.
+
+    On macOS the reverse lookup of 127.0.0.1 goes to DNS, where a slow resolver keeps the port
+    closed until it answers. Nothing here reads `server_name`, so it holds the address as given.
+    """
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = port
+
+
 class Proxy:
     """Lifecycle wrapper: construct, `.start()`, read `.base_url`/`.token`, `.stop()` when done."""
 
@@ -342,7 +357,7 @@ class Proxy:
         }
         adapters.update(extra_routes or {})
         handler = _make_handler(client=client, model=model, token=self.token, adapters=adapters)
-        self._httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+        self._httpd = _Server(("127.0.0.1", port), handler)
         self._thread: Optional[threading.Thread] = None
 
     @property
