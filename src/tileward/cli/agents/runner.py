@@ -20,7 +20,7 @@ import click
 from ... import errors
 from ...client import openai_base_url
 from ...config import config_dir
-from ...resources.models import summarize
+from ...resources.models import RATE_COLUMNS, RATE_HEADERS, table_row
 from . import anthropic, claude_config, codex_config, opencode_config, responses
 from .proxy import Proxy
 
@@ -54,10 +54,10 @@ def _pick_model(ctx: Any) -> str:
             "interactively."
         )
     ctx.out.table(
-        [{"#": i, **summarize(row)} for i, row in enumerate(rows, start=1)],
-        ["#", "id", "context_len", "price_per_mtoken_usd", "compression_ratio"],
+        [{"#": i, **table_row(row)} for i, row in enumerate(rows, start=1)],
+        ["#", "id", "context_len", *RATE_COLUMNS, "compression_ratio"],
         title="Available models",
-        headers={"price_per_mtoken_usd": "USD / Mtoken", "context_len": "context"},
+        headers={**RATE_HEADERS, "context_len": "context"},
     )
     choice = click.prompt(f"Pick a model [1-{len(ids)}]", type=click.IntRange(1, len(ids)))
     picked = ids[choice - 1]

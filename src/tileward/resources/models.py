@@ -6,7 +6,7 @@ Do not hardcode a model id.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..errors import NotFoundError
 
@@ -54,6 +54,33 @@ def summarize(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def summarize_all(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [summarize(row) for row in rows]
+
+
+def billed_rates(flat: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]]:
+    """The input and output rates, USD per million tokens, that calls to this model are billed.
+
+    A model priced on a split bills the two legs separately, so its blended
+    `price_per_mtoken_usd` is not what a token costs. An API that does not report the legs yet
+    bills that one rate on both, so it stands in for each.
+    """
+    pin, pout = flat.get("price_in_per_mtoken_usd"), flat.get("price_out_per_mtoken_usd")
+    if isinstance(pin, (int, float)) and isinstance(pout, (int, float)):
+        return float(pin), float(pout)
+    blended = flat.get("price_per_mtoken_usd")
+    if isinstance(blended, (int, float)):
+        return float(blended), float(blended)
+    return None, None
+
+
+RATE_COLUMNS = ["usd_in", "usd_out"]
+RATE_HEADERS = {"usd_in": "USD / M in", "usd_out": "USD / M out"}
+
+
+def table_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    """summarize() plus the billed input and output rates, for the model tables."""
+    flat = summarize(row)
+    flat["usd_in"], flat["usd_out"] = billed_rates(flat)
+    return flat
 
 
 class Models:
