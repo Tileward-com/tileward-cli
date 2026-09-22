@@ -72,7 +72,7 @@ twcli auth logout --all    # also forget the stored API key
 
 This deletes the local copy. It does not end the session server-side. To cut off a session you no
 longer control — a laptop you no longer have, a code you should not have approved — sign out
-everywhere from [the console](https://app.tileward.com/account). That invalidates every session on
+everywhere from [the console](https://app.tileward.com/settings). That invalidates every session on
 the account, this one included.
 
 ## Managing keys
