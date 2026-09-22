@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 
 def _color_system() -> Optional[Literal["auto"]]:
@@ -94,14 +95,29 @@ class Out:
             self.stdout.print(f"[dim]{empty}[/dim]")
             return
         table = Table(title=title, header_style="bold", box=None, pad_edge=False)
-        for column in columns:
-            table.add_column((headers or {}).get(column, column.replace("_", " ")))
-        for row in rows:
-            values = [
-                local_time(row.get(column)) if column in timestamps else row.get(column)
+        cells = [
+            [
+                _cell(local_time(row.get(column)) if column in timestamps else row.get(column))
                 for column in columns
             ]
-            table.add_row(*[_cell(value) for value in values])
+            for row in rows
+        ]
+        for i, column in enumerate(columns):
+            header = (headers or {}).get(column, column.replace("_", " "))
+            # Measured as displayed: a missing value is the markup "[dim]—[/dim]", one cell wide.
+            texts = [header, *(Text.from_markup(r[i]).plain for r in cells)]
+            if column in IDENTIFIER_COLUMNS:
+                # Copied, not read: kept whole on one line while every other column gives way.
+                # Too narrow even for that, it folds rather than ending in an ellipsis.
+                longest = max(len(t) for t in texts)
+                table.add_column(header, no_wrap=True, overflow="fold", min_width=longest)
+            else:
+                # A column may wrap between words but never cut one: a narrow terminal printed
+                # "compressi…" for a one-word header.
+                longest_word = max((len(w) for t in texts for w in t.split()), default=1)
+                table.add_column(header, min_width=longest_word)
+        for row_cells in cells:
+            table.add_row(*row_cells)
         self.stdout.print(table)
 
     def pairs(self, data: Dict[str, Any], *, title: Optional[str] = None) -> None:
@@ -113,6 +129,13 @@ class Out:
         for key, value in data.items():
             table.add_row(str(key), _cell(value))
         self.stdout.print(table)
+
+
+# Values a reader copies into a command or a script. Rich fits a table to the terminal by
+# shrinking columns, and a value with no spaces in it cannot wrap, so an 80-column terminal cut
+# model ids short ("Tileward-Qwen3.…") once the model table grew a column.
+IDENTIFIER_COLUMNS = frozenset({"id", "conv", "conversation", "model", "profile", "request_id",
+                                "key_id"})
 
 
 def local_time(value: Any) -> Any:
