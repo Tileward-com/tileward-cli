@@ -73,7 +73,8 @@ def billed_rates(flat: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]
 
 
 RATE_COLUMNS = ["usd_in", "usd_out"]
-RATE_HEADERS = {"usd_in": "USD / M in", "usd_out": "USD / M out"}
+# Short enough that the model table fits an 80-column terminal without cutting anything.
+RATE_HEADERS = {"usd_in": "$/M in", "usd_out": "$/M out"}
 
 
 def table_row(row: Dict[str, Any]) -> Dict[str, Any]:
