@@ -59,7 +59,7 @@ Documentation = "https://tileward-com.github.io/tileward-cli/"
 Source = "https://github.com/Tileward-com/tileward-cli"
 Issues = "https://github.com/Tileward-com/tileward-cli/issues"
 Changelog = "https://github.com/Tileward-com/tileward-cli/releases"
-Dashboard = "https://app.tileward.com/account"
+Dashboard = "https://app.tileward.com/"
 
 [project.scripts]
 twcli = "tileward.cli.main:main"
