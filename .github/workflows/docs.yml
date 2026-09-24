@@ -33,7 +33,7 @@ jobs:
       - run: pip install -e ".[docs]"
       # --strict fails on a broken internal link, so a renamed page cannot ship a dead nav entry.
       - run: mkdocs build --strict
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
