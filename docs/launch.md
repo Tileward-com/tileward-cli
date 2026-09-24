@@ -138,6 +138,17 @@ block is printed for you to add by hand instead.
 twcli launch opencode --model Tileward-Qwen3.6-35B-A3B
 ```
 
+## When a request fails
+
+The proxy shares your terminal with the tool, so it never prints there. If the tool abandons a
+request — you press Esc, or it gives up waiting — the proxy drops it quietly and stops reading the
+model's answer.
+A failure comes back to the tool as an ordinary API error, which it shows and retries the way it
+would for any provider. Anything unexpected is appended to `<config dir>/proxy-errors.log`.
+
+Requests the tool makes without streaming are still streamed from Tileward and assembled locally,
+so a long answer isn't cut off by a read timeout while the model is still writing it.
+
 ## What you give up going through claude or codex
 
 Tool calling on Tileward's own models is measured, not assumed — see

@@ -3,6 +3,10 @@
 One per `twcli launch`, bound to `127.0.0.1` only, torn down when the child process exits. The
 child CLI only ever sees a random per-run bearer token, never the real `tw_live_...` key.
 
+The child owns the terminal and this process shares it, so the proxy never prints. A request the
+client abandons is dropped quietly, a failure goes back to the child as its own kind of API error,
+and anything unexpected is appended to the error log instead.
+
 An "adapter" is a module with five functions -- `anthropic.py` and `responses.py` both have this
 shape, so a third protocol is a third module, not a change here:
 
@@ -13,6 +17,7 @@ shape, so a third protocol is a third module, not a change here:
     stream_error_event(exc: Exception) -> bytes  # a mid-stream failure, after headers are sent
     count_tokens(body: dict) -> dict  # optional, routed only if `routes` maps a path to it
     REQUEST_SCHEMA: voluptuous.Schema  # optional, checked against every request body first
+    RELAYS_RESPONSE: bool  # optional, True if from_chat_response returns the completion unchanged
 
 A request that is not a JSON object of the shape the adapter reads is answered with a 400 in the
 adapter's own error format, before anything is translated, counted or sent upstream.
@@ -27,12 +32,18 @@ import json
 import os
 import secrets
 import signal
+import socket
 import socketserver
+import sys
 import threading
 import time
+import traceback
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from itertools import chain
+from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 import voluptuous as vol
 
@@ -61,10 +72,10 @@ _TRUNCATION_SIGNATURES = (
     "json decode",
 )
 
-# Transient upstream/gateway failures. `retry_5xx` is on ONLY for the streaming path: the SDK
-# transport already retries these statuses on the non-streaming path (see `_http.RETRY_STATUS`),
-# and retrying them here too would multiply the two budgets together; the streaming path retries
-# nothing on its own, so there the proxy is the only line of defence.
+# Transient upstream/gateway failures. A request goes upstream as a stream (a non-streaming client
+# request is folded from one, see `_fold`), and a stream retries nothing on its own, so the proxy
+# is the only line of defence. The one direct call left, for an adapter that relays its response
+# as it came, is retried on 5xx by the SDK transport already, so the proxy leaves that to it.
 _RETRYABLE_STATUS = frozenset({500, 502, 503, 504})
 
 _RETRY_BACKOFFS = (0.2, 0.6)  # two retries, three attempts in all
@@ -85,33 +96,122 @@ def _where(exc: vol.Invalid) -> str:
     return f"{path}: " if path else ""
 
 
-def _is_retryable_backend_error(exc: Exception, retry_5xx: bool) -> bool:
+def _is_retryable_backend_error(exc: Exception, retry_5xx: bool = True) -> bool:
     status = getattr(exc, "status", None)
     if retry_5xx and status in _RETRYABLE_STATUS:
         return True
     # A truncated request body is never retried by the transport (a 4xx reads as the caller's
-    # fault), so the proxy always owns this case -- on both paths, with no double-retry risk.
+    # fault), so the proxy owns this case too.
     if isinstance(status, int) and 400 <= status < 500:
         message = (getattr(exc, "message", "") or "").lower()
         return any(sig in message for sig in _TRUNCATION_SIGNATURES)
     return False
 
 
-def _with_backend_retry(call: Any, *, retry_5xx: bool) -> Any:
+def _with_backend_retry(
+    call: Any, *, retry_5xx: bool = True, gone: Optional[Callable[[], bool]] = None
+) -> Any:
     """Run `call()`, retrying a transient backend failure a couple of times before giving up.
 
     `call` must open a FRESH upstream request each time and must not have written anything to the
-    client yet -- both proxy handlers force the first upstream byte before committing a response,
-    which is what keeps a retry here invisible to the agent on the other end.
+    client yet -- every proxy path has the upstream answer, or its first chunk, in hand before it
+    commits a response, which is what keeps a retry here invisible to the agent on the other end.
+    `gone()` says whether that agent has already left: a retry would then only repeat a generation
+    nobody will read.
     """
     for backoff in _RETRY_BACKOFFS:
         try:
             return call()
         except errors.TilewardError as exc:
-            if not _is_retryable_backend_error(exc, retry_5xx):
+            if not _is_retryable_backend_error(exc, retry_5xx) or (gone is not None and gone()):
                 raise
             time.sleep(backoff)
     return call()  # last attempt; its result or its exception is the caller's
+
+
+# The client gave up on a request: Esc in the child CLI, its own timeout, the child exiting. That
+# is routine, and there is nobody left to tell.
+_CLIENT_GONE = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
+
+# Bytes. Past this the log rolls over to `<name>.1`, so a long-lived bug can't fill a disk and the
+# newest entries are still the ones kept.
+_LOG_CAP = 1_000_000
+_LOG_LOCK = threading.Lock()
+
+
+def _record(path: Optional[Path], text: str) -> None:
+    """Append `text` to the error log. Best effort: this runs while another failure is being
+    handled, so it must not raise."""
+    if path is None:
+        return
+    try:
+        with _LOG_LOCK:
+            if path.exists() and path.stat().st_size > _LOG_CAP:
+                path.replace(path.with_name(path.name + ".1"))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(f"{at} {text.rstrip()}\n")
+    except OSError:
+        pass
+
+
+def _traceback(exc: BaseException) -> str:
+    return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+
+def _describe(exc: Exception) -> str:
+    """One line for a failure of ours, since the child shows its message; the traceback for
+    anything else, which is a bug here."""
+    if isinstance(exc, errors.TilewardError):
+        return f"{type(exc).__name__}: {exc}"
+    return _traceback(exc)
+
+
+def _fold(chunks: Iterator[Dict[str, Any]], gone: Callable[[], bool]) -> Dict[str, Any]:
+    """Fold a chat-completions stream into the one completion a non-streaming caller expects.
+
+    Non-streaming requests are streamed upstream too. A single blocking response stays silent for
+    the whole generation, so a long answer runs into a read timeout -- and the retries that repeat
+    the generation -- long before it finishes. A stream keeps bytes flowing, and can be dropped the
+    moment the client leaves: `gone()` is asked between chunks and raises out of here if so.
+    """
+    completion: Dict[str, Any] = {}
+    text: List[str] = []
+    calls: Dict[int, Dict[str, Any]] = {}
+    finish_reason: Optional[str] = None
+    for chunk in chunks:
+        if gone():
+            raise BrokenPipeError("the client closed the connection")
+        for key in ("id", "model", "usage"):
+            if chunk.get(key):
+                completion[key] = chunk[key]
+        for choice in chunk.get("choices") or []:
+            if choice.get("index", 0) != 0:
+                continue
+            delta = choice.get("delta") or {}
+            if delta.get("content"):
+                text.append(delta["content"])
+            for call in delta.get("tool_calls") or []:
+                slot = calls.setdefault(
+                    call.get("index", 0),
+                    {"id": None, "type": "function", "function": {"name": "", "arguments": ""}},
+                )
+                # The id and name come from a call's first fragment, as in `stream_events`; some
+                # servers repeat them on every fragment after it.
+                slot["id"] = slot["id"] or call.get("id")
+                fn = call.get("function") or {}
+                slot["function"]["name"] = slot["function"]["name"] or fn.get("name") or ""
+                slot["function"]["arguments"] += fn.get("arguments") or ""
+            finish_reason = choice.get("finish_reason") or finish_reason
+
+    message: Dict[str, Any] = {"role": "assistant", "content": "".join(text) or None}
+    if calls:
+        message["tool_calls"] = [calls[i] for i in sorted(calls)]
+    completion["choices"] = [
+        {"index": 0, "message": message, "finish_reason": finish_reason or "stop"}
+    ]
+    return completion
 
 
 def _make_handler(
@@ -120,6 +220,7 @@ def _make_handler(
     model: str,
     token: str,
     adapters: Dict[str, Tuple[str, ModuleType]],
+    error_log: Optional[Path] = None,
 ) -> type:
     """Build a handler class closed over this launch's client/token and its routes.
 
@@ -145,15 +246,40 @@ def _make_handler(
 
         def _write_json(self, status: int, payload: Dict[str, Any]) -> None:
             body = json.dumps(payload).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            # Keep-alive parsing broke under a client that pipelines a retry right behind a
-            # non-2xx response; always closing sidesteps it, and a loopback proxy loses nothing.
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.close_connection = True
-            self.wfile.write(body)
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                # Keep-alive parsing broke under a client that pipelines a retry right behind a
+                # non-2xx response; always closing sidesteps it, and a loopback proxy loses nothing.
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.close_connection = True
+                self.wfile.write(body)
+            except _CLIENT_GONE:
+                self.close_connection = True
+
+        def _client_gone(self) -> bool:
+            """Whether the client has closed its end: a closed socket reads as EOF, while an open
+            one has either nothing to read yet or bytes waiting."""
+            sock = self.connection
+            timeout = sock.gettimeout()
+            try:
+                sock.settimeout(0)
+                try:
+                    return sock.recv(1, socket.MSG_PEEK) == b""
+                finally:
+                    sock.settimeout(timeout)
+            except BlockingIOError:
+                return False
+            except OSError:
+                return True
+
+        def _fail(self, adapter: ModuleType, exc: Exception) -> None:
+            """Log `exc` and send it as `adapter`'s error."""
+            _record(error_log, _describe(exc))
+            status, payload = adapter.error_body(exc)
+            self._write_json(status, payload)
 
         def _read_body(self, adapter: ModuleType) -> Dict[str, Any]:
             """The request body as a dict of the shape the adapter reads, or an `APIError` naming
@@ -193,6 +319,14 @@ def _make_handler(
                 self._write_json(404, {"error": {"message": msg}})
                 return
             route, adapter = entry
+            try:
+                self._serve(route, adapter)
+            except _CLIENT_GONE:
+                self.close_connection = True
+            except Exception as exc:  # a bug here must not become a traceback on the child's screen
+                self._fail(adapter, exc)
+
+        def _serve(self, route: str, adapter: ModuleType) -> None:
             if not self._authorized():
                 status, payload = adapter.error_body(
                     errors.AuthenticationError("Bad or missing local proxy token.", status=401)
@@ -254,85 +388,132 @@ def _make_handler(
                 },
             )
 
-        def _handle_once(self, adapter: ModuleType, messages: Any, rest: Dict[str, Any]) -> None:
+        def _start(
+            self, adapter: ModuleType, messages: Any, rest: Dict[str, Any]
+        ) -> Optional[Tuple[Any, Iterator[Dict[str, Any]]]]:
+            """Open the upstream stream and read its first chunk, retrying a transient failure.
+
+            Returns `(stream, events)`, `events` being the stream with that chunk put back in front,
+            or None once the client has been answered instead. The stream is lazy: nothing is sent,
+            and nothing can fail, until an item is read. Reading the first here lets a failure come
+            back as a real status code instead of a dead stream.
+            """
+
+            def attempt() -> Tuple[Any, Dict[str, Any]]:
+                stream = client.chat.completions.create(
+                    messages,
+                    model=model,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    **rest,
+                )
+                return stream, next(stream)
+
+            try:
+                stream, first = _with_backend_retry(attempt, gone=self._client_gone)
+            except errors.TilewardError as exc:
+                self._fail(adapter, exc)
+                return None
+            except StopIteration:
+                self._write_json(200, adapter.from_chat_response({"choices": []}, model=model))
+                return None
+            return stream, chain([first], stream)
+
+        def _relay_once(self, adapter: ModuleType, messages: Any, rest: Dict[str, Any]) -> None:
+            """A non-streaming request for an adapter that hands the completion back as it came,
+            which a completion folded from a stream would not be."""
             try:
                 completion = _with_backend_retry(
                     lambda: client.chat.completions.create(
                         messages, model=model, stream=False, **rest
                     ),
-                    retry_5xx=False,  # the transport already retries 5xx on this path
+                    retry_5xx=False,
+                    gone=self._client_gone,
                 )
             except errors.TilewardError as exc:
-                status, payload = adapter.error_body(exc)
-                self._write_json(status, payload)
+                self._fail(adapter, exc)
                 return
+            self._write_json(200, adapter.from_chat_response(completion, model=model))
+
+        def _handle_once(self, adapter: ModuleType, messages: Any, rest: Dict[str, Any]) -> None:
+            if getattr(adapter, "RELAYS_RESPONSE", False):
+                self._relay_once(adapter, messages, rest)
+                return
+            started = self._start(adapter, messages, rest)
+            if started is None:
+                return
+            stream, events = started
+            try:
+                completion = _fold(events, self._client_gone)
+            except errors.TilewardError as exc:
+                self._fail(adapter, exc)
+                return
+            finally:
+                stream.close()  # frees the upstream generation whether it finished or not
             self._write_json(200, adapter.from_chat_response(completion, model=model))
 
         def _handle_stream(
             self, adapter: ModuleType, messages: Any, rest: Dict[str, Any]
         ) -> None:
-            def _open():
-                chunks = client.chat.completions.create(
-                    messages, model=model, stream=True,
-                    stream_options={"include_usage": True}, **rest
-                )
-                # `chunks` is a lazy generator; force the first item before committing to 200 +
-                # SSE, so an upstream failure comes back as a real status code instead of a dead
-                # stream -- and so a retry re-opens the whole request rather than resuming a
-                # half-read one.
-                return chunks, next(chunks)
-
-            try:
-                chunks, first = _with_backend_retry(_open, retry_5xx=True)
-            except errors.TilewardError as exc:
-                status, payload = adapter.error_body(exc)
-                self._write_json(status, payload)
+            started = self._start(adapter, messages, rest)
+            if started is None:
                 return
-            except StopIteration:
-                self._write_json(200, adapter.from_chat_response({"choices": []}, model=model))
-                return
-
-            def rest_of_stream():
-                yield first
-                yield from chunks
-
-            # No Content-Length up front, so the client can't tell the body ended without a
-            # closed connection -- it would otherwise block on the next read forever.
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.close_connection = True
+            stream, events = started
             try:
-                for piece in adapter.stream_events(rest_of_stream(), model=model):
-                    self.wfile.write(piece)
-                    self.wfile.flush()
-            except errors.TilewardError as exc:
-                # Headers are already sent, so this can't become a status code -- send the
-                # protocol's own mid-stream error event instead of just dropping the connection,
-                # which otherwise looks identical to a silent hang on the client side.
+                # No Content-Length up front, so the client can't tell the body ended without a
+                # closed connection -- it would otherwise block on the next read forever.
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.close_connection = True
                 try:
-                    self.wfile.write(adapter.stream_error_event(exc))
-                    self.wfile.flush()
-                except OSError:
-                    pass  # the client already hung up; nothing left to write to
+                    for piece in adapter.stream_events(events, model=model):
+                        self.wfile.write(piece)
+                        self.wfile.flush()
+                except _CLIENT_GONE:
+                    pass
+                except Exception as exc:
+                    # Headers are already sent, so this can't become a status code -- send the
+                    # protocol's own mid-stream error event instead of just dropping the
+                    # connection, which otherwise looks identical to a silent hang on the client.
+                    _record(error_log, _describe(exc))
+                    try:
+                        self.wfile.write(adapter.stream_error_event(exc))
+                        self.wfile.flush()
+                    except OSError:
+                        pass  # the client already hung up; nothing left to write to
+            finally:
+                stream.close()  # stop paying for a generation nobody is reading
 
     return Handler
 
 
 class _Server(ThreadingHTTPServer):
-    """`ThreadingHTTPServer` without the host name lookup its `server_bind` makes before listening.
+    """`ThreadingHTTPServer` without the host name lookup its `server_bind` makes before listening,
+    and without the traceback on stderr its `handle_error` prints.
 
     On macOS the reverse lookup of 127.0.0.1 goes to DNS, where a slow resolver keeps the port
     closed until it answers. Nothing here reads `server_name`, so it holds the address as given.
     """
+
+    def __init__(self, address: Any, handler: Any, error_log: Optional[Path] = None) -> None:
+        super().__init__(address, handler)
+        self._error_log = error_log
 
     def server_bind(self) -> None:
         socketserver.TCPServer.server_bind(self)
         host, port = self.server_address[:2]
         self.server_name = str(host)
         self.server_port = port
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        # The default prints a traceback to stderr, which is the terminal the child CLI is drawing
+        # on: a client that hangs up mid-request would scatter one across its screen.
+        exc = sys.exc_info()[1]
+        if exc is not None and not isinstance(exc, _CLIENT_GONE):
+            _record(self._error_log, _traceback(exc))
 
 
 class Proxy:
@@ -348,6 +529,7 @@ class Proxy:
         port: int = 0,
         token: Optional[str] = None,
         extra_routes: Optional[Dict[str, Tuple[str, ModuleType]]] = None,
+        error_log: Optional[Path] = None,
     ) -> None:
         # A launch mints its own. A supervisor that has already written the token into a desktop
         # app's config passes it in, so the proxy can restart without the app losing access.
@@ -356,8 +538,10 @@ class Proxy:
             path: (route, adapter) for path, route in routes.items()
         }
         adapters.update(extra_routes or {})
-        handler = _make_handler(client=client, model=model, token=self.token, adapters=adapters)
-        self._httpd = _Server(("127.0.0.1", port), handler)
+        handler = _make_handler(
+            client=client, model=model, token=self.token, adapters=adapters, error_log=error_log
+        )
+        self._httpd = _Server(("127.0.0.1", port), handler, error_log)
         self._thread: Optional[threading.Thread] = None
 
     @property

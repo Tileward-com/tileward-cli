@@ -157,6 +157,40 @@ def test_a_port_already_in_use_says_so(tmp_path, monkeypatch):
     assert f"127.0.0.1:{port}" in result.output
 
 
+def test_serve_keeps_proxy_failures_in_the_log_a_launch_uses(tmp_path, monkeypatch):
+    """Nothing reads a supervised proxy's stderr, so what it would print goes to the config dir."""
+    from tileward.cli.commands import proxy as serve_command
+
+    seen = {}
+    real = serve_command.Proxy
+
+    class Spy(real):
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+            super().__init__(**kwargs)
+
+    def start_then_stop(proxy, on_ready):
+        proxy.start()
+        proxy.stop()
+
+    monkeypatch.setattr(runner, "resolve_model", lambda ctx, requested: "m")
+    monkeypatch.setattr(serve_command, "Proxy", Spy)
+    monkeypatch.setattr(serve_command, "run_until_stopped", start_then_stop)
+    token = tmp_path / "token"
+    token.write_text("t")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    config = tmp_path / "config"
+    result = CliRunner().invoke(
+        cli,
+        ["proxy", "serve", "--port", str(port), "--token-file", str(token)],
+        env={**ENV, "TILEWARD_CONFIG_DIR": str(config)},
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["error_log"] == config / "proxy-errors.log"
+
+
 @pytest.mark.parametrize("port", ["0", "70000"])
 def test_the_port_must_be_a_real_one(tmp_path, port):
     token = tmp_path / "token"

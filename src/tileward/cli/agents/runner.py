@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 import click
@@ -91,6 +92,11 @@ def _binary(name: str) -> str:
     return path
 
 
+def proxy_error_log() -> Path:
+    """Where a launch's proxy notes the failures it keeps off the terminal."""
+    return config_dir() / "proxy-errors.log"
+
+
 def _run_child(binary: str, args: Sequence[str], env: dict) -> int:
     """Inherit stdio: the child owns the terminal exactly as if it had been run directly."""
     proc = subprocess.Popen([binary, *args], env=env)
@@ -162,6 +168,7 @@ def launch_claude(
             "/v1/models": "models",
         },
         port=port,
+        error_log=proxy_error_log(),
     )
     proxy.start()
     ctx.out.note(f"Tileward proxy on {proxy.base_url} -- model {resolved!r} -> claude")
@@ -192,6 +199,7 @@ def launch_codex(ctx: Any, model: Optional[str], port: int, args: Sequence[str])
         model=resolved,
         routes={"/v1/responses": "responses"},
         port=port,
+        error_log=proxy_error_log(),
     )
     proxy.start()
     token_env = "TILEWARD_PROXY_TOKEN"
