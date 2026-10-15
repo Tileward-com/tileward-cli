@@ -7,11 +7,6 @@ on:
       - docs/**
       - mkdocs.yml
       - .github/workflows/docs.yml
-  pull_request:
-    paths:
-      - docs/**
-      - mkdocs.yml
-      - .github/workflows/docs.yml
   workflow_dispatch:
 
 # Enable Pages once, in Settings -> Pages -> Source: GitHub Actions. Nothing else to configure.
@@ -38,7 +33,7 @@ jobs:
           path: site
 
   deploy:
-    # A pull request builds but does not publish.
+    # Only main publishes.
     if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
