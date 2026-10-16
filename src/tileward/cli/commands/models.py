@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from ...resources.models import summarize, summarize_all
+from ...resources.models import RATE_COLUMNS, RATE_HEADERS, summarize, table_row
 from ..main import Ctx, common, pass_ctx
 
 
@@ -27,10 +27,10 @@ def list_models(ctx: Ctx) -> None:
     # endpoint actually returns, not a shape this CLI invented for a terminal.
     ctx.emit(rows)
     ctx.out.table(
-        summarize_all(rows),
-        ["id", "precision", "context_len", "price_per_mtoken_usd", "compression_ratio"],
+        [table_row(row) for row in rows],
+        ["id", "precision", "context_len", *RATE_COLUMNS, "compression_ratio"],
         headers={
-            "price_per_mtoken_usd": "USD / Mtoken",
+            **RATE_HEADERS,
             "context_len": "context",
             "compression_ratio": "compression",
         },

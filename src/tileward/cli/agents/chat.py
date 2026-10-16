@@ -20,6 +20,10 @@ REQUEST_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+# The reply goes back as it came, so a request that is not streaming is answered by a call that is
+# not streaming either: a completion rebuilt from a stream is not the one the gateway sent.
+RELAYS_RESPONSE = True
+
 # Keys the client library takes as its own options rather than request fields. A body that set
 # them would change how the proxy talks to Tileward, not what it asks; the stream options are set
 # by the proxy itself, which always asks for the usage chunk.

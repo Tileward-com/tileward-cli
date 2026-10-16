@@ -7,11 +7,6 @@ on:
       - docs/**
       - mkdocs.yml
       - .github/workflows/docs.yml
-  pull_request:
-    paths:
-      - docs/**
-      - mkdocs.yml
-      - .github/workflows/docs.yml
   workflow_dispatch:
 
 # Enable Pages once, in Settings -> Pages -> Source: GitHub Actions. Nothing else to configure.
@@ -27,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -e ".[docs]"
@@ -38,7 +33,7 @@ jobs:
           path: site
 
   deploy:
-    # A pull request builds but does not publish.
+    # Only main publishes.
     if: github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
@@ -50,4 +45,4 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

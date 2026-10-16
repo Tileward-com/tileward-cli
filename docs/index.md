@@ -61,5 +61,5 @@ points everything at one host will not work. See [Hosts](hosts.md).
 
 - [tileward.com](https://tileward.com) — the product, and where every measured figure is
   published. These pages do not restate them.
-- [app.tileward.com/account](https://app.tileward.com/account) — dashboard, keys, billing.
+- [app.tileward.com](https://app.tileward.com/) — dashboard; [API keys](https://app.tileward.com/settings/keys) and [billing](https://app.tileward.com/settings/billing) under Settings.
 - [Issues](https://github.com/Tileward-com/tileward-cli/issues) — bugs and requests.

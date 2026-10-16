@@ -10,7 +10,7 @@ from tileward import openai_base_url
 client = OpenAI(base_url=openai_base_url(), api_key="tw_live_...")
 
 client.chat.completions.create(
-    model="tileward-35b-a3b",
+    model="Tileward-Qwen3.6-35B-A3B",
     messages=[{"role": "user", "content": "Hello"}],
 )
 ```

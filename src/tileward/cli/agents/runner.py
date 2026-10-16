@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Optional, Sequence
 
 import click
@@ -20,7 +21,7 @@ import click
 from ... import errors
 from ...client import openai_base_url
 from ...config import config_dir
-from ...resources.models import summarize
+from ...resources.models import RATE_COLUMNS, RATE_HEADERS, table_row
 from . import anthropic, claude_config, codex_config, opencode_config, responses
 from .proxy import Proxy
 
@@ -54,10 +55,10 @@ def _pick_model(ctx: Any) -> str:
             "interactively."
         )
     ctx.out.table(
-        [{"#": i, **summarize(row)} for i, row in enumerate(rows, start=1)],
-        ["#", "id", "context_len", "price_per_mtoken_usd", "compression_ratio"],
+        [{"#": i, **table_row(row)} for i, row in enumerate(rows, start=1)],
+        ["#", "id", "context_len", *RATE_COLUMNS, "compression_ratio"],
         title="Available models",
-        headers={"price_per_mtoken_usd": "USD / Mtoken", "context_len": "context"},
+        headers={**RATE_HEADERS, "context_len": "context"},
     )
     choice = click.prompt(f"Pick a model [1-{len(ids)}]", type=click.IntRange(1, len(ids)))
     picked = ids[choice - 1]
@@ -89,6 +90,11 @@ def _binary(name: str) -> str:
             f"try `twcli launch` again."
         )
     return path
+
+
+def proxy_error_log() -> Path:
+    """Where a launch's proxy notes the failures it keeps off the terminal."""
+    return config_dir() / "proxy-errors.log"
 
 
 def _run_child(binary: str, args: Sequence[str], env: dict) -> int:
@@ -162,6 +168,7 @@ def launch_claude(
             "/v1/models": "models",
         },
         port=port,
+        error_log=proxy_error_log(),
     )
     proxy.start()
     ctx.out.note(f"Tileward proxy on {proxy.base_url} -- model {resolved!r} -> claude")
@@ -192,6 +199,7 @@ def launch_codex(ctx: Any, model: Optional[str], port: int, args: Sequence[str])
         model=resolved,
         routes={"/v1/responses": "responses"},
         port=port,
+        error_log=proxy_error_log(),
     )
     proxy.start()
     token_env = "TILEWARD_PROXY_TOKEN"

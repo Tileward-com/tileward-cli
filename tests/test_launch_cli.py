@@ -95,6 +95,36 @@ def test_launch_claude_resolves_configured_default_and_wires_the_proxy(
     assert str(isolated_config) in str(claude_config_dir)
 
 
+def spy_on_proxy(monkeypatch):
+    """Record the keyword arguments each launch builds its `Proxy` with."""
+    from tileward.cli.agents import runner
+
+    seen = {}
+    real = runner.Proxy
+
+    class Spy(real):
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(runner, "Proxy", Spy)
+    return seen
+
+
+@respx.mock
+@pytest.mark.parametrize("target", ["claude", "codex"])
+def test_launch_keeps_proxy_failures_off_the_terminal_in_a_log(
+    target, isolated_config, monkeypatch, tmp_path
+):
+    """The child owns the terminal, so the proxy's own failures go to a file in the config dir."""
+    serve_models()
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
+    seen = spy_on_proxy(monkeypatch)
+    result = run(["launch", target], monkeypatch=monkeypatch)
+    assert result.exit_code == 0
+    assert seen["error_log"] == isolated_config / "proxy-errors.log"
+
+
 @respx.mock
 def test_launch_claude_auto_selects_the_only_served_model(isolated_config, monkeypatch):
     respx.get("https://api.test/v1/models").mock(

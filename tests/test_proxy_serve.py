@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import socket
 import threading
+import time
 
 import httpx
 import pytest
@@ -84,6 +85,46 @@ def test_run_until_stopped_serves_then_releases_the_port():
     again._httpd.server_close()
 
 
+def test_the_proxy_answers_at_once_when_reverse_dns_is_slow(monkeypatch):
+    """The stdlib server looks up its own host name before it listens. Where reverse DNS is slow,
+    nothing can connect until that returns, and a supervisor waiting on the proxy gives up."""
+    lookups, unblock = [], threading.Event()
+
+    def unanswered_lookup(name=""):
+        lookups.append(name)
+        unblock.wait(30)
+        return name
+
+    monkeypatch.setattr(socket, "getfqdn", unanswered_lookup)
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    stop = threading.Event()
+
+    def serve():
+        proxy = Proxy(
+            client=offline_client(), adapter=responses, model="m", routes={}, port=port, token="t"
+        )
+        run_until_stopped(proxy, lambda: None, stop, watch_parent=False)
+
+    worker = threading.Thread(target=serve)
+    worker.start()
+    try:
+        deadline = time.monotonic() + 1.0
+        while True:
+            try:
+                answer = httpx.get(f"http://127.0.0.1:{port}/nope", timeout=1)
+                break
+            except httpx.TransportError:
+                assert time.monotonic() < deadline, f"not answering after 1s; lookups: {lookups}"
+                time.sleep(0.02)
+        assert answer.status_code == 404
+    finally:
+        unblock.set()
+        stop.set()
+        worker.join(5)
+
+
 def test_an_empty_token_file_is_refused(tmp_path, monkeypatch):
     token = tmp_path / "token"
     token.write_text("  \n")
@@ -114,6 +155,40 @@ def test_a_port_already_in_use_says_so(tmp_path, monkeypatch):
         )
     assert result.exit_code != 0
     assert f"127.0.0.1:{port}" in result.output
+
+
+def test_serve_keeps_proxy_failures_in_the_log_a_launch_uses(tmp_path, monkeypatch):
+    """Nothing reads a supervised proxy's stderr, so what it would print goes to the config dir."""
+    from tileward.cli.commands import proxy as serve_command
+
+    seen = {}
+    real = serve_command.Proxy
+
+    class Spy(real):
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+            super().__init__(**kwargs)
+
+    def start_then_stop(proxy, on_ready):
+        proxy.start()
+        proxy.stop()
+
+    monkeypatch.setattr(runner, "resolve_model", lambda ctx, requested: "m")
+    monkeypatch.setattr(serve_command, "Proxy", Spy)
+    monkeypatch.setattr(serve_command, "run_until_stopped", start_then_stop)
+    token = tmp_path / "token"
+    token.write_text("t")
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    config = tmp_path / "config"
+    result = CliRunner().invoke(
+        cli,
+        ["proxy", "serve", "--port", str(port), "--token-file", str(token)],
+        env={**ENV, "TILEWARD_CONFIG_DIR": str(config)},
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["error_log"] == config / "proxy-errors.log"
 
 
 @pytest.mark.parametrize("port", ["0", "70000"])

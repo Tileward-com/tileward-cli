@@ -310,7 +310,7 @@ def main(argv: Optional[list] = None) -> int:
         return EXIT_REFUSED
     except errors.InsufficientBalanceError as exc:
         out.error(str(exc))
-        out.warn("Top up at https://app.tileward.com/account — calls resume immediately.")
+        out.warn("Top up at https://app.tileward.com/settings/billing — calls resume immediately.")
         return EXIT_BALANCE
     except errors.AuthenticationError as exc:
         out.error(str(exc))

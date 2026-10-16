@@ -58,6 +58,7 @@ def serve(ctx: Ctx, port: int, token_file: Path, model: Optional[str]) -> None:
             port=port,
             token=token,
             extra_routes={"/v1/chat/completions": ("chat", chat)},
+            error_log=runner.proxy_error_log(),
         )
     except OSError as exc:
         raise click.ClickException(

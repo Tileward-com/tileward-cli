@@ -481,3 +481,15 @@ def test_an_api_key_provider_is_asked_once_and_its_key_reused():
     tw.models.list()
     assert asked == [True]
     assert route.calls[1].request.headers["authorization"] == "Bearer tw_live_provided"
+
+
+def test_billed_rates_prefers_the_legs_and_falls_back_to_the_blended_rate():
+    from tileward.resources.models import billed_rates
+    assert billed_rates({"price_per_mtoken_usd": 0.75, "price_in_per_mtoken_usd": 0.12,
+                         "price_out_per_mtoken_usd": 0.99}) == (0.12, 0.99)
+    assert billed_rates({"price_per_mtoken_usd": 0.25}) == (0.25, 0.25)
+    # One leg without the other is not a split the meter bills.
+    one_leg = {"price_per_mtoken_usd": 0.75, "price_in_per_mtoken_usd": 0.12}
+    assert billed_rates(one_leg) == (0.75, 0.75)
+    assert billed_rates({}) == (None, None)
+

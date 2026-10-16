@@ -67,6 +67,49 @@ def test_models_list_renders_a_table_without_json(isolated_config):
     assert "tileward-35b-a3b" in result.output
 
 
+@respx.mock
+def test_models_list_shows_the_input_and_output_rates_billed(isolated_config):
+    """A split model bills input and output separately; the table shows those two rates, not the
+    blended figure, which no token is charged at. An API that reports no legs bills its one rate
+    on both, so both columns show it."""
+    respx.get("https://api.test/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": [
+            {"id": "split-model", "tileward": {"price_per_mtoken_usd": 0.75,
+                                               "price_in_per_mtoken_usd": 0.12,
+                                               "price_out_per_mtoken_usd": 0.99}},
+            {"id": "old-api-model", "tileward": {"price_per_mtoken_usd": 0.25}},
+        ]})
+    )
+    out = run(["models", "list"]).output
+    assert "$/M in" in out and "$/M out" in out and "USD / Mtoken" not in out
+    split = next(line for line in out.splitlines() if line.startswith("split-model"))
+    assert "0.12" in split and "0.99" in split and "0.75" not in split
+    old = next(line for line in out.splitlines() if line.startswith("old-api-model"))
+    assert old.count("0.25") == 2
+
+
+@respx.mock
+def test_models_list_never_truncates_an_id_in_an_80_column_terminal(isolated_config, monkeypatch):
+    """Ids are copied into commands. At 80 columns the table used to end one with an ellipsis."""
+    monkeypatch.setenv("COLUMNS", "80")
+    respx.get("https://api.test/v1/models").mock(
+        return_value=httpx.Response(200, json={"data": [
+            {"id": "Tileward-Qwen3.6-35B-A3B", "tileward": {
+                "precision": "W4A16 (Tileward)", "context_len": 262144,
+                "price_in_per_mtoken_usd": 0.12, "price_out_per_mtoken_usd": 0.99,
+                "compression_ratio": 2.8}},
+            {"id": "Qwen3.6-35B-A3B-TW", "tileward": {"precision": "W4A16 (Tileward)"}},
+        ]})
+    )
+    out = run(["models", "list"]).output
+    assert "Tileward-Qwen3.6-35B-A3B" in out and "Qwen3.6-35B-A3B-TW" in out
+    assert "…" not in out
+    assert max(len(line) for line in out.splitlines()) <= 80
+    # Rich crops a table that is still too wide without saying so; every header must survive.
+    header = out.splitlines()[0].split()
+    assert header[:3] == ["id", "precision", "context"] and header[-1] == "compression", header
+
+
 CHAT = "https://api.test/v1/chat/completions"
 
 
