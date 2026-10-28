@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import re
+from http import HTTPStatus
 from typing import Any, Dict, Optional
+
+_HTML_START = re.compile(r"<!doctype|<html|<head|<!--", re.IGNORECASE)
 
 
 class TilewardError(Exception):
@@ -129,7 +133,15 @@ def from_response(status: int, body: Any, request_id: Optional[str] = None) -> A
         if not message:
             message = str(body.get("detail") or body.get("message") or "")
     elif isinstance(body, str):
-        message = body.strip()[:500]
+        text = body.strip()
+        # A proxy's error page is not a message; say what the status means instead.
+        if not _HTML_START.match(text):
+            message = text[:500]
+        else:
+            try:
+                message = HTTPStatus(status).phrase
+            except ValueError:
+                pass
 
     if not message:
         message = f"Tileward API returned HTTP {status}."
