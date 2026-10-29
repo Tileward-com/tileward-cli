@@ -39,6 +39,10 @@ TEMPLATE_ALLOWANCE = 256
 # retry: its "at least N input tokens" is one more than the room the ask left, whatever the
 # prompt's real length.
 HALVINGS = 4
+# Typed alone on a line, any of these ends a conversation; inside a longer message they are words.
+END_COMMANDS = {"/bye", "/exit", "/end", "/quit"}
+END_WORDS = {"bye", "exit", "end"}
+LEAVE_HINT = "Leave with /bye, /exit or /end, the word bye, exit or end on its own, or Ctrl-D."
 
 
 def _interactive_terminal() -> bool:
@@ -191,7 +195,7 @@ def _repl(
     options["headers"] = conversation_headers(f"twcli-{secrets.token_hex(5)}")
     out.print(
         f"[dim]Talking to {model or 'the default model'}; each answer gets {reach}. "
-        "/reset clears the transcript, Ctrl-D or /exit leaves.[/dim]"
+        f"/reset clears the transcript. {LEAVE_HINT}[/dim]"
     )
     if remember and not ctx.client.conversation:
         # Without a conversation every thread on the key writes into one shared store, and a later
@@ -215,12 +219,12 @@ def _repl(
                 return
             except KeyboardInterrupt:
                 out.raw("\n")
-                out.note("Ctrl-D or /exit leaves.")
+                out.note(LEAVE_HINT)
                 continue
         line = line.strip()
         if not line:
             continue
-        if line in {"/exit", "/quit"}:
+        if line.lower() in END_COMMANDS | END_WORDS:
             return
         if line == "/reset":
             transcript = [m for m in transcript if m.get("role") == "system"]

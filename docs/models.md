@@ -120,7 +120,7 @@ twcli chat -c project-x --remember
 Pair it with `-c`. Without one the transcript joins the key's shared default store — the REPL warns
 once when that is about to happen. See [Tileward Context](context.md).
 
-In a conversation, `/reset` clears the transcript and `/exit` (or Ctrl-D) leaves. Ctrl-C stops an
+In a conversation, `/reset` clears the transcript and `/bye`, `/exit` or `/end` (or the word `bye`, `exit` or `end` on a line of its own, or Ctrl-D) leaves. Ctrl-C stops an
 answer without ending the conversation. Each conversation gets a thread of its own in Tileward
 Context.
 

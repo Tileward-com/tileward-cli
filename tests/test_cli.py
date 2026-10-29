@@ -4,6 +4,7 @@ import json
 import warnings
 
 import httpx
+import pytest
 import respx
 from click.testing import CliRunner
 
@@ -244,6 +245,33 @@ def test_chat_with_no_prompt_on_a_terminal_starts_a_conversation(isolated_config
     result = run(["chat", "-m", "x"], env={"COLUMNS": "200"}, stdin="/exit\n")
     assert result.exit_code == 0
     assert "262,144-token window" in result.output
+
+
+@respx.mock
+@pytest.mark.parametrize("leave", ["/bye", "/exit", "/end", "/quit", "bye", "Exit", " END "])
+def test_the_conversation_ends_on_an_exit_command_or_word(isolated_config, leave):
+    serve_models()
+    route = respx.post(CHAT).mock(side_effect=[streamed("Hello."), streamed("Unreachable.")])
+    result = run(["chat", "-i", "-m", "x"], stdin=f"hi\n{leave}\nnever sent\n")
+    assert result.exit_code == 0
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_an_exit_word_inside_a_message_is_just_a_message(isolated_config):
+    serve_models()
+    route = respx.post(CHAT).mock(side_effect=[streamed("Sure."), streamed("Done.")])
+    run(["chat", "-i", "-m", "x"], stdin="how does the story end\nsay bye to Bob\n/exit\n")
+    assert [m["content"] for m in sent(route)["messages"]][-1] == "say bye to Bob"
+    assert route.call_count == 2
+
+
+@respx.mock
+def test_the_conversation_banner_lists_how_to_leave(isolated_config):
+    serve_models()
+    result = run(["chat", "-i", "-m", "x"], env={"COLUMNS": "200"}, stdin="/end\n")
+    assert "/bye, /exit or /end" in result.output
+    assert "bye, exit or end on its own" in result.output
 
 
 @respx.mock
