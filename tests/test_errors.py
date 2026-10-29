@@ -54,6 +54,19 @@ def test_html_body_does_not_raise_while_reporting():
     assert "Bad Gateway" in exc.message
 
 
+def test_html_error_page_is_not_echoed():
+    page = "<!DOCTYPE html>\n<!--> <html class='no-js'>\n<head><title>502: Bad gateway</title>"
+    exc = errors.from_response(502, page, "ray123")
+    assert exc.message == "Bad Gateway"
+    assert str(exc) == "Bad Gateway (HTTP 502) [request ray123]"
+
+
+def test_html_body_with_unknown_status_falls_back():
+    exc = errors.from_response(599, "<html>x</html>")
+    assert "<" not in exc.message
+    assert "599" in exc.message
+
+
 def test_empty_body_still_says_something():
     exc = errors.from_response(500, {})
     assert "500" in str(exc)
