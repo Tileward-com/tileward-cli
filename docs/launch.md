@@ -22,10 +22,9 @@ served:
 $ twcli launch claude
                             Available models
 #  id                        context  $/M in  $/M out  compression ratio
-1  Tileward-Qwen3.6-35B-A3B  262,144  0.12    0.99     2.8
-2  gpt-oss-20b               8,192    0.12    0.28     1
-3  Tileward-Qwen3.8-27b      262,144  0.12    0.96     1.79
-Pick a model [1-3]:
+1  gpt-oss-20b               8,192    0.12    0.28     1
+2  Tileward-Qwen3.8-27b      262,144  0.12    0.96     1.79
+Pick a model [1-2]:
 ```
 
 Answer once, or set a default so future launches skip the question:
@@ -75,7 +74,7 @@ key sitting in your shell can't silently take over and send the session to `api.
 instead.
 
 ```bash
-twcli launch claude --model Tileward-Qwen3.6-35B-A3B --fast-model gpt-oss-20b
+twcli launch claude --model Tileward-Qwen3.8-27b --fast-model gpt-oss-20b
 ```
 
 **It also points `CLAUDE_CONFIG_DIR` at `<config dir>/claude-launch`, never your real
@@ -135,7 +134,7 @@ accepts JSONC, comments and all, which this can't safely rewrite — nothing is 
 block is printed for you to add by hand instead.
 
 ```bash
-twcli launch opencode --model Tileward-Qwen3.6-35B-A3B
+twcli launch opencode --model Tileward-Qwen3.8-27b
 ```
 
 ## When a request fails

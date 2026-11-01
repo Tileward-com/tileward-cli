@@ -14,13 +14,9 @@ twcli models list
 
 ```console
 id                        precision           context  $/M in  $/M out  compression
-Tileward-Qwen3.6-35B-A3B  W4A16 (Tileward)    262,144  0.12    0.99     2.8
 gpt-oss-20b               MXFP4 (as shipped)  8,192    0.12    0.28     1
 Tileward-Qwen3.8-27b      W4A16 (Tileward)    262,144  0.12    0.96     1.79
 ```
-
-`Tileward-Qwen3.6-35B-A3B` also answers to `tileward-35b-a3b` and `Qwen3.6-35B-A3B-TW`, at the
-same rate.
 
 ```python
 tw.models.list()               # every served row, as the API returned it
@@ -127,7 +123,7 @@ Context.
 ## Model detail
 
 ```bash
-twcli models show Tileward-Qwen3.6-35B-A3B
+twcli models show Tileward-Qwen3.8-27b
 ```
 
 Everything the API reports about one model: precision, served context window, rate, compression
