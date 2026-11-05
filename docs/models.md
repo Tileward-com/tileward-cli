@@ -12,6 +12,9 @@ and get withdrawn without a release, so an id copied into a script is one that w
 twcli models list
 ```
 
+Sample output (ids and prices vary):
+
+<!-- sample output -->
 ```console
 id                        precision           context  $/M in  $/M out  compression
 Tileward-Qwen3.6-35B-A3B  W4A16 (Tileward)    262,144  0.12    0.99     2.8
@@ -19,13 +22,10 @@ gpt-oss-20b               MXFP4 (as shipped)  8,192    0.12    0.28     1
 Tileward-Qwen3.8-27b      W4A16 (Tileward)    262,144  0.12    0.96     1.79
 ```
 
-`Tileward-Qwen3.6-35B-A3B` also answers to `tileward-35b-a3b` and `Qwen3.6-35B-A3B-TW`, at the
-same rate.
-
 ```python
 tw.models.list()               # every served row, as the API returned it
 tw.models.ids()                # just the ids
-tw.models.retrieve("gpt-oss-20b")
+tw.models.retrieve("<model-id>")
 tw.models.default()            # the id the client would use if you named none
 ```
 
@@ -101,7 +101,7 @@ twcli chat                                     # a conversation that keeps the t
 twcli chat "Say hello in one sentence."        # one answer
 cat notes.md | twcli chat --system "You summarise."
 twcli chat "..." --usage                       # print token usage after the answer
-twcli chat "..." -m gpt-oss-20b --max-tokens 200
+twcli chat "..." -m <model-id> --max-tokens 200
 ```
 
 Streaming is on when stdout is a terminal and off when it is a pipe: a consumer reading the output
@@ -127,7 +127,7 @@ Context.
 ## Model detail
 
 ```bash
-twcli models show Tileward-Qwen3.6-35B-A3B
+twcli models show <model-id>
 ```
 
 Everything the API reports about one model: precision, served context window, rate, compression

@@ -55,7 +55,7 @@ def launch_claude(
 
     \b
       twcli launch claude
-      twcli launch claude --model Tileward-Qwen3.8-27b
+      twcli launch claude --model <model-id>
       twcli launch claude -- -p "explain this repo"
     """
     raise SystemExit(runner.launch_claude(ctx, model, fast_model, port, args, compaction_hooks))

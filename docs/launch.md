@@ -11,13 +11,14 @@ twcli launch opencode
 Each picks the account's configured default served model unless you pass `--model`:
 
 ```bash
-twcli launch claude --model Tileward-Qwen3.8-27b
+twcli launch claude --model <model-id>
 ```
 
 With no `--model` and no configured default, a single served model is used with no fuss. More
 than one, and there's no way to guess which one you meant, so you're asked from a table of what's
-served:
+served (sample output):
 
+<!-- sample output -->
 ```console
 $ twcli launch claude
                             Available models
@@ -31,7 +32,7 @@ Pick a model [1-3]:
 Answer once, or set a default so future launches skip the question:
 
 ```bash
-twcli config set model Tileward-Qwen3.8-27b
+twcli config set model <model-id>
 ```
 
 Running from a script or CI with no default configured fails with a clear error instead of
@@ -75,7 +76,7 @@ key sitting in your shell can't silently take over and send the session to `api.
 instead.
 
 ```bash
-twcli launch claude --model Tileward-Qwen3.6-35B-A3B --fast-model gpt-oss-20b
+twcli launch claude --model <model-id> --fast-model <model-id>
 ```
 
 **It also points `CLAUDE_CONFIG_DIR` at `<config dir>/claude-launch`, never your real
@@ -124,7 +125,7 @@ rather than a fixed name so two `launch codex` sessions running at once can't ra
 file and cross-wire which proxy each one talks to.
 
 ```bash
-twcli launch codex --model Tileward-Qwen3.8-27b
+twcli launch codex --model <model-id>
 ```
 
 ## opencode
@@ -135,7 +136,7 @@ accepts JSONC, comments and all, which this can't safely rewrite — nothing is 
 block is printed for you to add by hand instead.
 
 ```bash
-twcli launch opencode --model Tileward-Qwen3.6-35B-A3B
+twcli launch opencode --model <model-id>
 ```
 
 ## When a request fails
