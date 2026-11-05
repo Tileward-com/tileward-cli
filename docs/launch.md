@@ -76,7 +76,7 @@ key sitting in your shell can't silently take over and send the session to `api.
 instead.
 
 ```bash
-twcli launch claude --model <model-id> --fast-model <model-id>
+twcli launch claude --model <model-id> --fast-model <fast-model-id>
 ```
 
 **It also points `CLAUDE_CONFIG_DIR` at `<config dir>/claude-launch`, never your real

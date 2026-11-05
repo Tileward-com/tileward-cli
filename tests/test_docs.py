@@ -63,9 +63,15 @@ def test_internal_links_resolve(page):
         assert (DOCS / target).exists(), f"{page} links to a missing {target}"
 
 
-# A concrete model id: a gpt-oss or Qwen name, or a Tileward alias of one. Docs must use a
+# A concrete model id: a gpt-oss or Qwen name, a Tileward-prefixed name (capitalised, as the
+# catalogue spells them), or a lowercase Tileward alias that starts with a digit. Docs must use a
 # placeholder or the served list. Sample output is the one place an id may appear literally.
-MODEL_ID = re.compile(r"(?i)\b(?:gpt-oss|qwen\d)[\w.-]*|\btileward-(?:qwen|\d+b)[\w.-]*")
+# The capitalised form leaves out Tileward-com, tileward-cli, tileward.com and TILEWARD_* alone.
+MODEL_ID = re.compile(
+    r"(?i:\b(?:gpt-oss|qwen\d))[\w.-]*"
+    r"|(?<![\w-])Tileward-[A-Z0-9][\w.-]*"
+    r"|(?<![\w-])tileward-\d[\w.-]*"
+)
 SAMPLE_OUTPUT = "<!-- sample output -->"
 PAGES = [DOCS.parent / "README.md", *sorted(DOCS.glob("*.md"))]
 
@@ -95,6 +101,16 @@ def test_the_model_id_check_allows_sample_output_and_flags_prose():
     assert model_ids_outside_sample_output(f"{SAMPLE_OUTPUT}\n```console\nqwen3 8k\n```\n") == []
     assert model_ids_outside_sample_output("Pass gpt-oss-20b here.\n") != []
     assert model_ids_outside_sample_output("```bash\ntwcli chat -m tileward-35b-a3b\n```\n") != []
+    assert model_ids_outside_sample_output("Pass Tileward-Example-7b here.\n") != []
+    assert model_ids_outside_sample_output("Pass Tileward-Alpha-Flash here.\n") != []
+    for kept in [
+        "https://github.com/Tileward-com/tileward-cli",
+        "see tileward.com and tileward-cli",
+        "export TILEWARD_API_KEY=tw_live_x",
+        "the Tileward Models surface",
+        "as `X-Tileward-Context-Saved`, a header",
+    ]:
+        assert model_ids_outside_sample_output(kept) == [], kept
 
 
 @pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
