@@ -5,12 +5,13 @@ changing two things: the base URL and the key.
 
 ```python
 from openai import OpenAI
-from tileward import openai_base_url
+from tileward import Tileward, openai_base_url
 
+tw = Tileward(api_key="tw_live_...")
 client = OpenAI(base_url=openai_base_url(), api_key="tw_live_...")
 
 client.chat.completions.create(
-    model="Tileward-Qwen3.6-35B-A3B",
+    model=tw.models.default(),
     messages=[{"role": "user", "content": "Hello"}],
 )
 ```
@@ -32,7 +33,7 @@ export OPENAI_BASE_URL="https://api.tileward.com/v1"
 export OPENAI_API_KEY="tw_live_..."
 ```
 
-Ask for the model id rather than assuming one — `twcli models list --json | jq -r '.[0].id'`. See
+Ask for the model id rather than assuming one — `twcli models list --json | jq -r '.[].id'`. See
 [Tileward Models](models.md).
 
 Copy-paste recipes for specific chat clients, editors, agent frameworks and gateways are at

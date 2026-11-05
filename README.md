@@ -26,6 +26,9 @@
 
 ---
 
+Sample session (output is illustrative; ids and prices vary):
+
+<!-- sample output -->
 ```console
 $ pip install tileward
 $ twcli auth login
@@ -165,9 +168,6 @@ raises `GuardRefusal` when governance blocked the call, rather than returning an
 **Do not hardcode a model id.** The served catalogue is data, not code — ids appear, get repriced
 and get withdrawn without a release. `tw.models.list()` is the authority; leave `model` unset and
 the client asks.
-
-`Tileward-Qwen3.6-35B-A3B` also answers to `tileward-35b-a3b` and `Qwen3.6-35B-A3B-TW`, at the
-same rate.
 
 ### Governance
 
