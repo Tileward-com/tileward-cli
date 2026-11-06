@@ -12,15 +12,8 @@ and get withdrawn without a release, so an id copied into a script is one that w
 twcli models list
 ```
 
-Sample output (ids and prices vary):
-
-<!-- sample output -->
-```console
-id                        precision           context  $/M in  $/M out  compression
-Tileward-Qwen3.6-35B-A3B  W4A16 (Tileward)    262,144  0.12    0.99     2.8
-gpt-oss-20b               MXFP4 (as shipped)  8,192    0.12    0.28     1
-Tileward-Qwen3.8-27b      W4A16 (Tileward)    262,144  0.12    0.96     1.79
-```
+The table has one row per served model: its `id`, `precision`, served `context` window, the price
+per million tokens in and out (`$/M in`, `$/M out`) and the `compression` ratio.
 
 ```python
 tw.models.list()               # every served row, as the API returned it

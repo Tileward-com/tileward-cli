@@ -26,19 +26,14 @@
 
 ---
 
-Sample session (output is illustrative; ids and prices vary):
+Sample session (output is illustrative):
 
-<!-- sample output -->
 ```console
 $ pip install tileward
 $ twcli auth login
 $ twcli keys create --label laptop --save
 
-$ twcli models list
-id                        precision           context  $/M in  $/M out  compression
-Tileward-Qwen3.6-35B-A3B  W4A16 (Tileward)    262,144  0.12    0.99     2.8
-gpt-oss-20b               MXFP4 (as shipped)  8,192    0.12    0.28     1
-Tileward-Qwen3.8-27b      W4A16 (Tileward)    262,144  0.12    0.96     1.79
+$ twcli models list     # one row per served model: id, precision, context, price, compression
 
 $ twcli chat "Say hello in one sentence."
 Hello there — good to meet you.
