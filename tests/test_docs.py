@@ -65,44 +65,29 @@ def test_internal_links_resolve(page):
 
 # A concrete model id: a gpt-oss or Qwen name, a Tileward-prefixed name (capitalised, as the
 # catalogue spells them), or a lowercase Tileward alias that starts with a digit. Docs must use a
-# placeholder or the served list. Sample output is the one place an id may appear literally.
+# placeholder or the served list, in prose and in code blocks alike (sample output included).
 # The capitalised form leaves out Tileward-com, tileward-cli, tileward.com and TILEWARD_* alone.
 MODEL_ID = re.compile(
     r"(?i:\b(?:gpt-oss|qwen\d))[\w.-]*"
     r"|(?<![\w-])Tileward-[A-Z0-9][\w.-]*"
     r"|(?<![\w-])tileward-\d[\w.-]*"
 )
-SAMPLE_OUTPUT = "<!-- sample output -->"
 PAGES = [DOCS.parent / "README.md", *sorted(DOCS.glob("*.md"))]
 
 
-def model_ids_outside_sample_output(text: str) -> list:
-    """Each (line number, line) that names a concrete model id outside a sample-output block.
-
-    A fenced block counts as sample output when the line right above its opening fence is the
-    marker.
-    """
-    found = []
-    fenced = False
-    sample = False
-    previous = ""
-    for number, line in enumerate(text.splitlines(), 1):
-        if line.startswith("```"):
-            fenced = not fenced
-            sample = fenced and previous == SAMPLE_OUTPUT
-        elif MODEL_ID.search(line) and not (fenced and sample):
-            found.append((number, line.strip()))
-        if line.strip():
-            previous = line.strip()
-    return found
+def model_ids(text: str) -> list:
+    """Each (line number, line) that names a concrete model id, in prose or in a code block."""
+    return [(number, line.strip()) for number, line in enumerate(text.splitlines(), 1)
+            if MODEL_ID.search(line)]
 
 
-def test_the_model_id_check_allows_sample_output_and_flags_prose():
-    assert model_ids_outside_sample_output(f"{SAMPLE_OUTPUT}\n```console\nqwen3 8k\n```\n") == []
-    assert model_ids_outside_sample_output("Pass gpt-oss-20b here.\n") != []
-    assert model_ids_outside_sample_output("```bash\ntwcli chat -m tileward-35b-a3b\n```\n") != []
-    assert model_ids_outside_sample_output("Pass Tileward-Example-7b here.\n") != []
-    assert model_ids_outside_sample_output("Pass Tileward-Alpha-Flash here.\n") != []
+def test_the_model_id_check_flags_prose_and_code_blocks_alike():
+    assert model_ids("```console\nTileward-Qwen3.8-27b  262,144\n```\n") != []
+    assert model_ids("<!-- sample output -->\n```console\nqwen3 8k\n```\n") != []
+    assert model_ids("Pass gpt-oss-20b here.\n") != []
+    assert model_ids("```bash\ntwcli chat -m tileward-35b-a3b\n```\n") != []
+    assert model_ids("Pass Tileward-Example-7b here.\n") != []
+    assert model_ids("Pass Tileward-Alpha-Flash here.\n") != []
     for kept in [
         "https://github.com/Tileward-com/tileward-cli",
         "see tileward.com and tileward-cli",
@@ -110,10 +95,10 @@ def test_the_model_id_check_allows_sample_output_and_flags_prose():
         "the Tileward Models surface",
         "as `X-Tileward-Context-Saved`, a header",
     ]:
-        assert model_ids_outside_sample_output(kept) == [], kept
+        assert model_ids(kept) == [], kept
 
 
 @pytest.mark.parametrize("page", PAGES, ids=lambda p: p.name)
 def test_docs_name_no_concrete_model_id(page):
-    found = model_ids_outside_sample_output(page.read_text(encoding="utf-8"))
-    assert found == [], f"{page.name} names a model id outside sample output: {found}"
+    found = model_ids(page.read_text(encoding="utf-8"))
+    assert found == [], f"{page.name} names a model id: {found}"

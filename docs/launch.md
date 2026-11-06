@@ -15,19 +15,8 @@ twcli launch claude --model <model-id>
 ```
 
 With no `--model` and no configured default, a single served model is used with no fuss. More
-than one, and there's no way to guess which one you meant, so you're asked from a table of what's
-served (sample output):
-
-<!-- sample output -->
-```console
-$ twcli launch claude
-                            Available models
-#  id                        context  $/M in  $/M out  compression ratio
-1  Tileward-Qwen3.6-35B-A3B  262,144  0.12    0.99     2.8
-2  gpt-oss-20b               8,192    0.12    0.28     1
-3  Tileward-Qwen3.8-27b      262,144  0.12    0.96     1.79
-Pick a model [1-3]:
-```
+than one, and there's no way to guess which one you meant, so you're asked to pick one from a
+numbered table of what's served (id, context window, prices and compression ratio).
 
 Answer once, or set a default so future launches skip the question:
 
